@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.api.appointments import router as appointments_router
 from app.api.auth import router as auth_router
 from app.api.clients import router as clients_router
 from app.api.expenses import router as expenses_router
@@ -7,6 +8,7 @@ from app.api.health import router as health_router
 from app.api.incomes import router as incomes_router
 from app.api.services import router as services_router
 from app.api.settings import router as settings_router
+from app.api.work_windows import router as work_windows_router
 from app.core.config import settings
 
 app = FastAPI(
@@ -21,3 +23,5 @@ app.include_router(services_router, prefix="/api/services", tags=["services"])
 app.include_router(clients_router, prefix="/api/clients", tags=["clients"])
 app.include_router(incomes_router, prefix="/api/incomes", tags=["incomes"])
 app.include_router(expenses_router, prefix="/api/expenses", tags=["expenses"])
+app.include_router(work_windows_router, prefix="/api/work-windows", tags=["work-windows"])
+app.include_router(appointments_router, prefix="/api/appointments", tags=["appointments"])

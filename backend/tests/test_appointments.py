@@ -1,0 +1,454 @@
+"""Tests for appointments API."""
+from fastapi.testclient import TestClient
+
+
+def _login(client: TestClient, test_user):
+    res = client.post(
+        "/api/auth/login",
+        json={"login": "owner", "password": "correct_password"},
+    )
+    assert res.status_code == 200
+
+
+def _create_service(client: TestClient, name: str = "Маникюр", price: int = 1500, duration: int = 60) -> dict:
+    res = client.post(
+        "/api/services",
+        json={"name": name, "price": price, "duration_minutes": duration},
+    )
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def _create_work_window(
+    client: TestClient,
+    target_date: str = "2024-06-15",
+    start_time: str = "09:00:00",
+    end_time: str = "18:00:00",
+) -> dict:
+    res = client.post(
+        "/api/work-windows",
+        json={"date": target_date, "start_time": start_time, "end_time": end_time},
+    )
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def _create_client_via_api(client: TestClient, name: str = "Анна", phone: str = "79001112233") -> dict:
+    res = client.post(
+        "/api/clients",
+        json={"name": name, "phone": phone},
+    )
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def test_appt_unauthorized(client: TestClient):
+    client.cookies.clear()
+    res = client.get("/api/appointments")
+    assert res.status_code == 401
+
+
+def test_create_appointment_basic(client: TestClient, test_user):
+    _login(client, test_user)
+
+    svc = _create_service(client, name="Маникюр", price=1500, duration=60)
+    _create_work_window(client, "2024-06-15", "09:00:00", "18:00:00")
+    cl = _create_client_via_api(client)
+
+    # starts_at as Moscow time (naive → treated as local)
+    # 2024-06-15 10:00 Moscow = 2024-06-15 07:00 UTC
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T10:00:00",
+            "service_ids": [svc["id"]],
+        },
+    )
+    assert res.status_code == 201, res.text
+    data = res.json()
+
+    assert data["list_price"] == 1500
+    assert data["final_price"] == 1500
+    assert data["price_overridden"] is False
+    assert len(data["services"]) == 1
+    assert data["services"][0]["name_snapshot"] == "Маникюр"
+    assert data["services"][0]["price_snapshot"] == 1500
+    assert data["services"][0]["duration_snapshot"] == 60
+
+    assert data["local_date"] == "2024-06-15"
+    assert data["local_start_time"] == "10:00:00"
+    assert data["local_end_time"] == "11:00:00"  # +60 min
+
+    assert data["status"] == "scheduled"
+    assert data["warnings"] == []
+
+
+def test_snapshots_not_changed_on_price_change(client: TestClient, test_user):
+    """Changing service price must NOT affect existing appointment snapshots."""
+    _login(client, test_user)
+
+    svc = _create_service(client, name="Педикюр", price=2000, duration=90)
+    _create_work_window(client, "2024-06-15", "09:00:00", "18:00:00")
+    cl = _create_client_via_api(client)
+
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T10:00:00",
+            "service_ids": [svc["id"]],
+        },
+    )
+    assert res.status_code == 201
+    appt_id = res.json()["id"]
+
+    # Update service price
+    client.patch(f"/api/services/{svc['id']}", json={"price": 3000})
+
+    # Check appointment snapshot unchanged
+    get_res = client.get(f"/api/appointments/{appt_id}")
+    assert get_res.status_code == 200
+    data = get_res.json()
+    assert data["services"][0]["price_snapshot"] == 2000
+    assert data["list_price"] == 2000
+
+
+def test_service_ids_patch_keeps_old_snapshots(client: TestClient, test_user):
+    """PATCH with service_ids: existing services keep old snapshots, new ones get current price."""
+    _login(client, test_user)
+
+    svc_a = _create_service(client, name="Услуга А", price=1000, duration=30)
+    svc_b = _create_service(client, name="Услуга Б", price=800, duration=30)
+    _create_work_window(client, "2024-06-15", "09:00:00", "18:00:00")
+    cl = _create_client_via_api(client)
+
+    # Create appointment with service A only
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T10:00:00",
+            "service_ids": [svc_a["id"]],
+        },
+    )
+    assert res.status_code == 201
+    appt_id = res.json()["id"]
+
+    # Update service A price
+    client.patch(f"/api/services/{svc_a['id']}", json={"price": 9999})
+
+    # PATCH appointment to include A and B
+    patch_res = client.patch(
+        f"/api/appointments/{appt_id}",
+        json={"service_ids": [svc_a["id"], svc_b["id"]]},
+    )
+    assert patch_res.status_code == 200, patch_res.text
+    data = patch_res.json()
+
+    # Find snapshots by service_id
+    snap_a = next(s for s in data["services"] if s["service_id"] == svc_a["id"])
+    snap_b = next(s for s in data["services"] if s["service_id"] == svc_b["id"])
+
+    # A keeps OLD snapshot (1000, not 9999)
+    assert snap_a["price_snapshot"] == 1000
+    # B gets current price (800)
+    assert snap_b["price_snapshot"] == 800
+
+    # list_price = 1000 + 800 = 1800
+    assert data["list_price"] == 1800
+
+
+def test_final_price_and_price_overridden(client: TestClient, test_user):
+    _login(client, test_user)
+    svc = _create_service(client, price=1500, duration=60)
+    _create_work_window(client, "2024-06-15")
+    cl = _create_client_via_api(client)
+
+    # Without final_price: price_overridden=false, final_price=list_price
+    res1 = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T10:00:00",
+            "service_ids": [svc["id"]],
+        },
+    )
+    assert res1.status_code == 201
+    d1 = res1.json()
+    assert d1["price_overridden"] is False
+    assert d1["final_price"] == d1["list_price"]
+
+    # With different final_price: price_overridden=true
+    cl2 = _create_client_via_api(client, name="Клиент 2", phone="79009998877")
+    res2 = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl2["id"],
+            "starts_at": "2024-06-15T13:00:00",
+            "service_ids": [svc["id"]],
+            "final_price": 1000,
+        },
+    )
+    assert res2.status_code == 201
+    d2 = res2.json()
+    assert d2["price_overridden"] is True
+    assert d2["final_price"] == 1000
+    assert d2["list_price"] == 1500
+
+
+def test_reset_price(client: TestClient, test_user):
+    _login(client, test_user)
+    svc = _create_service(client, price=1500, duration=60)
+    _create_work_window(client, "2024-06-15")
+    cl = _create_client_via_api(client)
+
+    # Create with custom final_price
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T10:00:00",
+            "service_ids": [svc["id"]],
+            "final_price": 500,
+        },
+    )
+    assert res.status_code == 201
+    appt_id = res.json()["id"]
+
+    # PATCH with reset_price=true
+    patch_res = client.patch(
+        f"/api/appointments/{appt_id}",
+        json={"reset_price": True},
+    )
+    assert patch_res.status_code == 200
+    data = patch_res.json()
+    assert data["price_overridden"] is False
+    assert data["final_price"] == 1500
+
+
+def test_ends_at_computed(client: TestClient, test_user):
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    _create_work_window(client, "2024-06-15")
+    cl = _create_client_via_api(client)
+
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T10:00:00",
+            "service_ids": [svc["id"]],
+        },
+    )
+    assert res.status_code == 201
+    data = res.json()
+    assert data["local_end_time"] == "11:00:00"
+
+
+def test_outside_work_window_warning(client: TestClient, test_user):
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    # Create a work window that doesn't cover appointment time
+    _create_work_window(client, "2024-06-15", "13:00:00", "18:00:00")
+    cl = _create_client_via_api(client)
+
+    # Appointment at 10:00–11:00, outside work window (13:00–18:00)
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T10:00:00",
+            "service_ids": [svc["id"]],
+            "force": False,
+        },
+    )
+    assert res.status_code == 409
+    detail = res.json()["detail"]
+    assert detail["code"] == "needs_confirmation"
+    assert "outside_work_window" in detail["warnings"]
+
+    # With force=True: succeeds, warnings in response
+    res2 = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T10:00:00",
+            "service_ids": [svc["id"]],
+            "force": True,
+        },
+    )
+    assert res2.status_code == 201
+    data = res2.json()
+    assert "outside_work_window" in data["warnings"]
+
+
+def test_overlap_warning(client: TestClient, test_user):
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    _create_work_window(client, "2024-06-15")
+    cl = _create_client_via_api(client)
+
+    # Create first appointment
+    res1 = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T10:00:00",
+            "service_ids": [svc["id"]],
+        },
+    )
+    assert res1.status_code == 201
+    first_id = res1.json()["id"]
+
+    # Second appointment overlapping with the first
+    cl2 = _create_client_via_api(client, name="Клиент 2", phone="79009998877")
+    res2 = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl2["id"],
+            "starts_at": "2024-06-15T10:30:00",  # overlaps 10:00–11:00
+            "service_ids": [svc["id"]],
+            "force": False,
+        },
+    )
+    assert res2.status_code == 409
+    detail = res2.json()["detail"]
+    assert detail["code"] == "needs_confirmation"
+    assert "overlaps_existing" in detail["warnings"]
+    assert first_id in detail["overlapping_ids"]
+
+
+def test_midnight_boundary_local_date(client: TestClient, test_user):
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    # 2024-06-16 01:30 Moscow = 2024-06-15 22:30 UTC
+    _create_work_window(client, "2024-06-16", "01:00:00", "03:00:00")
+    cl = _create_client_via_api(client)
+
+    # Pass UTC-aware datetime
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T22:30:00+00:00",
+            "service_ids": [svc["id"]],
+        },
+    )
+    assert res.status_code == 201, res.text
+    data = res.json()
+    assert data["local_date"] == "2024-06-16"
+    assert data["local_start_time"] == "01:30:00"
+
+
+def test_inline_client_create(client: TestClient, test_user):
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    _create_work_window(client, "2024-06-15")
+
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client": {"name": "Новый Клиент", "phone": "79111234567"},
+            "starts_at": "2024-06-15T10:00:00",
+            "service_ids": [svc["id"]],
+        },
+    )
+    assert res.status_code == 201, res.text
+    data = res.json()
+    assert data["client"]["name"] == "Новый Клиент"
+    assert data["client"]["phone"] == "79111234567"
+
+    # Verify client was actually created in DB
+    clients_res = client.get("/api/clients")
+    assert any(c["phone"] == "79111234567" for c in clients_res.json()["items"])
+
+
+def test_inline_client_find_existing(client: TestClient, test_user):
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    _create_work_window(client, "2024-06-15")
+
+    # Pre-create a client
+    existing_cl = _create_client_via_api(client, name="Существующий", phone="79222333444")
+    existing_id = existing_cl["id"]
+
+    # Create appointment with same phone via inline client
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client": {"name": "Другое Имя", "phone": "79222333444"},
+            "starts_at": "2024-06-15T10:00:00",
+            "service_ids": [svc["id"]],
+        },
+    )
+    assert res.status_code == 201, res.text
+    data = res.json()
+    # Should link to existing client
+    assert data["client"]["id"] == existing_id
+    assert data["client"]["name"] == "Существующий"
+
+
+def test_soft_delete(client: TestClient, test_user):
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    _create_work_window(client, "2024-06-15")
+    cl = _create_client_via_api(client)
+
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T10:00:00",
+            "service_ids": [svc["id"]],
+        },
+    )
+    assert res.status_code == 201
+    appt_id = res.json()["id"]
+
+    del_res = client.delete(f"/api/appointments/{appt_id}")
+    assert del_res.status_code == 200
+    assert del_res.json() == {"status": "ok"}
+
+    get_res = client.get(f"/api/appointments/{appt_id}")
+    assert get_res.status_code == 404
+
+
+def test_patch_service_ids_add_new_service(client: TestClient, test_user):
+    """PATCH appt with [A, B] where B is new: A keeps old snapshot, B gets current price."""
+    _login(client, test_user)
+
+    svc_a = _create_service(client, name="Услуга А", price=1000, duration=30)
+    svc_b = _create_service(client, name="Услуга Б", price=800, duration=30)
+    _create_work_window(client, "2024-06-15")
+    cl = _create_client_via_api(client)
+
+    # Create appointment with A only
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T10:00:00",
+            "service_ids": [svc_a["id"]],
+        },
+    )
+    assert res.status_code == 201
+    appt_id = res.json()["id"]
+    old_snap_a_price = res.json()["services"][0]["price_snapshot"]
+
+    # Update A's price in the catalog
+    client.patch(f"/api/services/{svc_a['id']}", json={"price": 5000})
+
+    # PATCH with [A, B]
+    patch_res = client.patch(
+        f"/api/appointments/{appt_id}",
+        json={"service_ids": [svc_a["id"], svc_b["id"]]},
+    )
+    assert patch_res.status_code == 200, patch_res.text
+    data = patch_res.json()
+
+    snap_a = next(s for s in data["services"] if s["service_id"] == svc_a["id"])
+    snap_b = next(s for s in data["services"] if s["service_id"] == svc_b["id"])
+
+    assert snap_a["price_snapshot"] == old_snap_a_price  # 1000, not 5000
+    assert snap_b["price_snapshot"] == 800  # current price of B

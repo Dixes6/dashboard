@@ -1,3 +1,11 @@
+from app.services.appointments import (
+    NeedsConfirmationError,
+    create_appointment,
+    delete_appointment,
+    get_appointment,
+    list_appointments,
+    update_appointment,
+)
 from app.services.auth import authenticate_user, create_owner, get_owner
 from app.services.clients import (
     create_client,
@@ -28,6 +36,14 @@ from app.services.services import (
     update_service,
 )
 from app.services.settings import get_or_create_settings, update_settings
+from app.services.work_windows import (
+    bulk_create_work_windows,
+    create_work_window,
+    delete_work_window,
+    get_work_window,
+    list_work_windows,
+    update_work_window,
+)
 
 __all__ = [
     "authenticate_user",
@@ -55,4 +71,16 @@ __all__ = [
     "create_expense",
     "update_expense",
     "delete_expense",
+    "list_work_windows",
+    "get_work_window",
+    "create_work_window",
+    "bulk_create_work_windows",
+    "update_work_window",
+    "delete_work_window",
+    "NeedsConfirmationError",
+    "create_appointment",
+    "get_appointment",
+    "list_appointments",
+    "update_appointment",
+    "delete_appointment",
 ]
