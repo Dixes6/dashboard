@@ -1,17 +1,19 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.appointment import AppointmentStatus
+from app.models.user import User
 from app.schemas.appointment import AppointmentCreate, AppointmentResponse, AppointmentUpdate
 from app.services.appointments import (
     NeedsConfirmationError,
     create_appointment,
     delete_appointment,
     get_appointment,
+    get_next_appointment,
     list_appointments,
     update_appointment,
 )
@@ -36,6 +38,24 @@ async def get_appointments(
         status=status,
         client_id=client_id,
     )
+
+
+@router.get(
+    "/next",
+    response_model=AppointmentResponse,
+    responses={
+        200: {"description": "Ближайшая запись"},
+        204: {"description": "Нет предстоящих записей"},
+    },
+)
+async def get_next_appointment_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+):
+    appt = await get_next_appointment(db)
+    if not appt:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return appt
 
 
 @router.get("/{appointment_id}", response_model=AppointmentResponse)

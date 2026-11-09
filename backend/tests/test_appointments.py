@@ -1,5 +1,8 @@
 """Tests for appointments API."""
 from fastapi.testclient import TestClient
+import psycopg
+
+from tests.conftest import sync_test_url
 
 
 def _login(client: TestClient, test_user):
@@ -115,7 +118,8 @@ def test_snapshots_not_changed_on_price_change(client: TestClient, test_user):
 
 
 def test_service_ids_patch_keeps_old_snapshots(client: TestClient, test_user):
-    """PATCH with service_ids: existing services keep old snapshots, new ones get current price."""
+    """PATCH with service_ids: existing services keep old snapshots, new ones get current price.
+    Сценарий (а): price_overridden = false, final_price пересчитывается в list_price."""
     _login(client, test_user)
 
     svc_a = _create_service(client, name="Услуга А", price=1000, duration=30)
@@ -123,7 +127,7 @@ def test_service_ids_patch_keeps_old_snapshots(client: TestClient, test_user):
     _create_work_window(client, "2024-06-15", "09:00:00", "18:00:00")
     cl = _create_client_via_api(client)
 
-    # Create appointment with service A only
+    # Create appointment with service A only (price_overridden = false)
     res = client.post(
         "/api/appointments",
         json={
@@ -134,8 +138,10 @@ def test_service_ids_patch_keeps_old_snapshots(client: TestClient, test_user):
     )
     assert res.status_code == 201
     appt_id = res.json()["id"]
+    assert res.json()["price_overridden"] is False
+    assert res.json()["final_price"] == 1000
 
-    # Update service A price
+    # Update service A price in catalog
     client.patch(f"/api/services/{svc_a['id']}", json={"price": 9999})
 
     # PATCH appointment to include A and B
@@ -157,6 +163,39 @@ def test_service_ids_patch_keeps_old_snapshots(client: TestClient, test_user):
 
     # list_price = 1000 + 800 = 1800
     assert data["list_price"] == 1800
+    # (а) price_overridden = false -> final_price пересчитывается
+    assert data["price_overridden"] is False
+    assert data["final_price"] == 1800
+
+    # Свежее чтение через GET /api/appointments/{id}
+    get_res = client.get(f"/api/appointments/{appt_id}")
+    assert get_res.status_code == 200
+    fresh = get_res.json()
+    assert fresh["list_price"] == 1800
+    assert fresh["final_price"] == 1800
+    assert fresh["price_overridden"] is False
+    assert len(fresh["services"]) == 2
+    fresh_snap_a = next(s for s in fresh["services"] if s["service_id"] == svc_a["id"])
+    fresh_snap_b = next(s for s in fresh["services"] if s["service_id"] == svc_b["id"])
+    assert fresh_snap_a["price_snapshot"] == 1000
+    assert fresh_snap_b["price_snapshot"] == 800
+
+    # Проверка на уровне БД напрямую
+    with psycopg.connect(sync_test_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT list_price, final_price, price_overridden FROM appointments WHERE id = %s",
+                (appt_id,),
+            )
+            row = cur.fetchone()
+            assert row == (1800, 1800, False)
+
+            cur.execute(
+                "SELECT service_id, price_snapshot FROM appointment_services WHERE appointment_id = %s ORDER BY position",
+                (appt_id,),
+            )
+            svc_rows = cur.fetchall()
+            assert svc_rows == [(svc_a["id"], 1000), (svc_b["id"], 800)]
 
 
 def test_final_price_and_price_overridden(client: TestClient, test_user):
@@ -415,7 +454,8 @@ def test_soft_delete(client: TestClient, test_user):
 
 
 def test_patch_service_ids_add_new_service(client: TestClient, test_user):
-    """PATCH appt with [A, B] where B is new: A keeps old snapshot, B gets current price."""
+    """PATCH appt with [A, B] where B is new: A keeps old snapshot, B gets current price.
+    Сценарий (б): price_overridden = true, final_price остаётся прежним."""
     _login(client, test_user)
 
     svc_a = _create_service(client, name="Услуга А", price=1000, duration=30)
@@ -423,18 +463,22 @@ def test_patch_service_ids_add_new_service(client: TestClient, test_user):
     _create_work_window(client, "2024-06-15")
     cl = _create_client_via_api(client)
 
-    # Create appointment with A only
+    # Create appointment with A only and custom final_price (ручная цена: price_overridden = true)
     res = client.post(
         "/api/appointments",
         json={
             "client_id": cl["id"],
             "starts_at": "2024-06-15T10:00:00",
             "service_ids": [svc_a["id"]],
+            "final_price": 600,
         },
     )
     assert res.status_code == 201
     appt_id = res.json()["id"]
     old_snap_a_price = res.json()["services"][0]["price_snapshot"]
+    assert res.json()["price_overridden"] is True
+    assert res.json()["final_price"] == 600
+    assert res.json()["list_price"] == 1000
 
     # Update A's price in the catalog
     client.patch(f"/api/services/{svc_a['id']}", json={"price": 5000})
@@ -452,3 +496,37 @@ def test_patch_service_ids_add_new_service(client: TestClient, test_user):
 
     assert snap_a["price_snapshot"] == old_snap_a_price  # 1000, not 5000
     assert snap_b["price_snapshot"] == 800  # current price of B
+    assert data["list_price"] == 1800  # 1000 + 800
+    # (б) price_overridden = true -> final_price остаётся прежним (600)
+    assert data["price_overridden"] is True
+    assert data["final_price"] == 600
+
+    # Свежее чтение через GET /api/appointments/{id}
+    get_res = client.get(f"/api/appointments/{appt_id}")
+    assert get_res.status_code == 200
+    fresh = get_res.json()
+    assert fresh["list_price"] == 1800
+    assert fresh["final_price"] == 600
+    assert fresh["price_overridden"] is True
+    assert len(fresh["services"]) == 2
+    fresh_snap_a = next(s for s in fresh["services"] if s["service_id"] == svc_a["id"])
+    fresh_snap_b = next(s for s in fresh["services"] if s["service_id"] == svc_b["id"])
+    assert fresh_snap_a["price_snapshot"] == 1000
+    assert fresh_snap_b["price_snapshot"] == 800
+
+    # Проверка на уровне БД напрямую
+    with psycopg.connect(sync_test_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT list_price, final_price, price_overridden FROM appointments WHERE id = %s",
+                (appt_id,),
+            )
+            row = cur.fetchone()
+            assert row == (1800, 600, True)
+
+            cur.execute(
+                "SELECT service_id, price_snapshot FROM appointment_services WHERE appointment_id = %s ORDER BY position",
+                (appt_id,),
+            )
+            svc_rows = cur.fetchall()
+            assert svc_rows == [(svc_a["id"], 1000), (svc_b["id"], 800)]

@@ -5,6 +5,7 @@ from app.schemas.appointment import (
 )
 from app.schemas.auth import LoginRequest, UserResponse
 from app.schemas.client import ClientCreate, ClientListResponse, ClientResponse, ClientUpdate
+from app.schemas.dashboard import CalendarDayResponse, DayDetailsResponse
 from app.schemas.financial import (
     ExpenseCreate,
     ExpenseResponse,
@@ -47,4 +48,6 @@ __all__ = [
     "AppointmentCreate",
     "AppointmentUpdate",
     "AppointmentResponse",
+    "CalendarDayResponse",
+    "DayDetailsResponse",
 ]

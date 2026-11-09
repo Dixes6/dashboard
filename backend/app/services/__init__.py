@@ -3,6 +3,7 @@ from app.services.appointments import (
     create_appointment,
     delete_appointment,
     get_appointment,
+    get_next_appointment,
     list_appointments,
     update_appointment,
 )
@@ -15,6 +16,7 @@ from app.services.clients import (
     list_clients_with_stats,
     update_client,
 )
+from app.services.dashboard import get_calendar_month, get_day_details
 from app.services.expenses import (
     create_expense,
     delete_expense,
@@ -80,7 +82,10 @@ __all__ = [
     "NeedsConfirmationError",
     "create_appointment",
     "get_appointment",
+    "get_next_appointment",
     "list_appointments",
     "update_appointment",
     "delete_appointment",
+    "get_calendar_month",
+    "get_day_details",
 ]

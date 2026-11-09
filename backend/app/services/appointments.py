@@ -378,6 +378,7 @@ async def update_appointment(
 
         for old_svc in list(appointment.appointment_services):
             await db.delete(old_svc)
+        appointment.appointment_services.clear()
         await db.flush()
 
         for snap in new_snapshots:
@@ -385,7 +386,7 @@ async def update_appointment(
                 appointment_id=appointment.id,
                 **snap,
             )
-            db.add(appt_svc)
+            appointment.appointment_services.append(appt_svc)
         await db.flush()
 
         new_list_price = sum(s["price_snapshot"] for s in new_snapshots)
@@ -427,6 +428,7 @@ async def update_appointment(
             raise NeedsConfirmationError(warnings, overlapping_ids)
 
     await db.commit()
+    db.expire_all()
 
     loaded = await _load_appointment(db, appointment_id)
     return _build_appointment_dict(loaded, tz_name, warnings)
@@ -444,3 +446,30 @@ async def delete_appointment(db: AsyncSession, appointment_id: int) -> bool:
     appointment.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     return True
+
+
+async def get_next_appointment(db: AsyncSession) -> dict[str, Any] | None:
+    settings_obj = await get_or_create_settings(db)
+    tz_name = settings_obj.timezone
+    now_utc = datetime.now(timezone.utc)
+
+    stmt = (
+        select(Appointment)
+        .options(
+            selectinload(Appointment.client),
+            selectinload(Appointment.appointment_services),
+        )
+        .where(
+            Appointment.status == AppointmentStatus.SCHEDULED,
+            Appointment.starts_at >= now_utc,
+            Appointment.deleted_at.is_(None),
+        )
+        .order_by(Appointment.starts_at.asc())
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    appointment = result.scalar_one_or_none()
+    if not appointment:
+        return None
+    return _build_appointment_dict(appointment, tz_name)
+
