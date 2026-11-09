@@ -22,9 +22,9 @@ EXPECTED_TABLES = {
 def test_migration_apply_and_rollback():
     ini_path = Path(__file__).resolve().parents[1] / "alembic.ini"
     alembic_cfg = Config(str(ini_path))
-    alembic_cfg.set_main_option("sqlalchemy.url", settings.async_database_url)
+    alembic_cfg.set_main_option("sqlalchemy.url", settings.async_test_database_url)
 
-    sync_url = settings.async_database_url.replace("+asyncpg", "+psycopg")
+    sync_url = settings.async_test_database_url.replace("+asyncpg", "+psycopg")
     sync_engine = create_engine(sync_url)
 
     try:

@@ -20,8 +20,10 @@ from app.models.base import Base
 # access to the values within the .ini file in use.
 config = context.config
 
-# Set sqlalchemy.url from our settings
-config.set_main_option("sqlalchemy.url", settings.async_database_url)
+# Set sqlalchemy.url from settings unless explicitly overridden with a real URL
+current_url = config.get_main_option("sqlalchemy.url")
+if not current_url or "driver://user:pass" in current_url:
+    config.set_main_option("sqlalchemy.url", settings.async_database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
