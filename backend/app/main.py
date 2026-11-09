@@ -7,10 +7,4 @@ app = FastAPI(
     description="Dashboard для мастера маникюра",
 )
 
-
-@app.get("/health", tags=["health"])
-async def root_health():
-    return {"status": "ok"}
-
-
 app.include_router(health_router, prefix="/api", tags=["health"])
