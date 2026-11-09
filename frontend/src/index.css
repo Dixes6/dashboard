@@ -1,0 +1,61 @@
+@import "tailwindcss";
+@config "../tailwind.config.ts";
+
+/* Fonts: Cormorant & Manrope with Cyrillic support */
+@import "@fontsource/cormorant/cyrillic.css";
+@import "@fontsource/cormorant/cyrillic-ext.css";
+@import "@fontsource/cormorant/400.css";
+@import "@fontsource/cormorant/600.css";
+@import "@fontsource/cormorant/700.css";
+
+@import "@fontsource/manrope/cyrillic.css";
+@import "@fontsource/manrope/cyrillic-ext.css";
+@import "@fontsource/manrope/400.css";
+@import "@fontsource/manrope/500.css";
+@import "@fontsource/manrope/600.css";
+@import "@fontsource/manrope/700.css";
+
+:root {
+  --bg: #FAF6F4;
+  --surface: #FFFFFF;
+  --border: #EADFE2;
+  --text: #2E2329;
+  --muted: #7A6B73;
+  --primary: #C4637A;
+  --primary-soft: #F6E3E8;
+  --accent: #B89B72;
+  --success: #5E9C7E;
+  --danger: #C8453F;
+}
+
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+
+  --font-heading: 'Cormorant', serif;
+  --font-sans: 'Manrope', sans-serif;
+
+  --radius-card: 16px;
+  --radius-btn: 12px;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Manrope', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Cormorant', serif;
+}
