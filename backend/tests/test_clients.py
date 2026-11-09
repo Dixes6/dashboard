@@ -1,6 +1,7 @@
-from datetime import datetime, timezone, timedelta
-from fastapi.testclient import TestClient
+from datetime import datetime, timedelta, timezone
+
 import psycopg
+from fastapi.testclient import TestClient
 
 from tests.conftest import sync_test_url
 

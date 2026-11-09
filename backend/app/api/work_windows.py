@@ -15,7 +15,6 @@ from app.services.work_windows import (
     bulk_create_work_windows,
     create_work_window,
     delete_work_window,
-    get_work_window,
     list_work_windows,
     update_work_window,
 )

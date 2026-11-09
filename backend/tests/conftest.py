@@ -1,18 +1,17 @@
 from pathlib import Path
 
-from alembic import command
-from alembic.config import Config
-from fastapi.testclient import TestClient
 import psycopg
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
-
+from alembic import command
+from alembic.config import Config
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import hash_password, login_rate_limiter
 from app.main import app
 from app.models.user import User
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 sync_test_url = settings.async_test_database_url.replace("+asyncpg", "").replace("+psycopg", "")
 

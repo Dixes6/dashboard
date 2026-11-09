@@ -1,6 +1,5 @@
-from datetime import date
-from fastapi.testclient import TestClient
 import psycopg
+from fastapi.testclient import TestClient
 
 from tests.conftest import sync_test_url
 

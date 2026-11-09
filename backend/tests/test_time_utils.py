@@ -1,7 +1,6 @@
 """Unit tests for pure functions in app.core.time_utils (no DB needed)."""
-from datetime import date, datetime, time, timezone
-
 import zoneinfo
+from datetime import date, datetime, time, timezone
 
 from app.core.time_utils import (
     appointment_fits_in_windows,

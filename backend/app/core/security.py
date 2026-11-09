@@ -1,11 +1,11 @@
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-import time
 from typing import Any
 
+import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, VerifyMismatchError
-import jwt
 
 from app.core.config import settings
 

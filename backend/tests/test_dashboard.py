@@ -1,9 +1,9 @@
 """Tests for dashboard endpoints: calendar month, day details, and next appointment."""
-from datetime import datetime, timedelta, timezone
 import zoneinfo
+from datetime import datetime, timedelta, timezone
 
-from fastapi.testclient import TestClient
 import psycopg
+from fastapi.testclient import TestClient
 
 from tests.conftest import sync_test_url
 

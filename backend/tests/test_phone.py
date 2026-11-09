@@ -1,5 +1,4 @@
 import pytest
-
 from app.core.phone import normalize_phone, prepare_phone_prefix_search
 
 
