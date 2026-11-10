@@ -6,9 +6,9 @@ from app.core.phone import normalize_phone
 
 
 class ClientCreate(BaseModel):
-    name: str = Field(..., min_length=1, description="Имя клиента")
+    name: str = Field(..., min_length=1, max_length=200, description="Имя клиента")
     phone: str = Field(..., description="Номер телефона клиента")
-    notes: str | None = Field(default=None, description="Заметки о клиенте")
+    notes: str | None = Field(default=None, max_length=2000, description="Заметки о клиенте")
 
     @field_validator("name")
     @classmethod
@@ -25,9 +25,9 @@ class ClientCreate(BaseModel):
 
 
 class ClientUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1)
+    name: str | None = Field(default=None, min_length=1, max_length=200)
     phone: str | None = Field(default=None)
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=2000)
 
     @field_validator("name")
     @classmethod

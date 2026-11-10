@@ -1,4 +1,9 @@
+import os
 from pathlib import Path
+
+# Explicit test configuration
+os.environ["JWT_SECRET_KEY"] = "test_secret_key_at_least_32_chars_long_for_testing_purposes"
+os.environ["APP_ENV"] = "development"
 
 import psycopg
 import pytest
@@ -87,7 +92,8 @@ def test_user():
     with psycopg.connect(sync_test_url, autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO users (login, password_hash) VALUES (%s, %s) RETURNING id, login, created_at",
+                "INSERT INTO users (login, password_hash) VALUES (%s, %s) "
+                "RETURNING id, login, created_at",
                 ("owner", hashed),
             )
             row = cur.fetchone()

@@ -1,9 +1,15 @@
+from typing import Literal
+
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Manicure Dashboard"
     API_V1_STR: str = "/api"
+
+    # Environment
+    APP_ENV: Literal["development", "production"] = "development"
 
     # Database
     POSTGRES_USER: str = "postgres"
@@ -15,12 +21,35 @@ class Settings(BaseSettings):
     TEST_DATABASE_URL: str | None = None
 
     # Auth & JWT
-    JWT_SECRET_KEY: str = "change_me_to_a_secure_random_string_at_least_32_chars"
+    JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_DAYS: int = 30
-    COOKIE_SECURE: bool = False
+    COOKIE_SECURE: bool | None = None
     COOKIE_SAMESITE: str = "lax"
     COOKIE_NAME: str = "access_token"
+
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def validate_jwt_secret_key(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("JWT_SECRET_KEY must be at least 32 characters long")
+        forbidden = ["change_me", "changeme", "replace_me", "your_secret_here"]
+        v_lower = v.lower()
+        for pattern in forbidden:
+            if pattern in v_lower:
+                raise ValueError(f"JWT_SECRET_KEY cannot contain template value '{pattern}'")
+        return v
+
+    @model_validator(mode="after")
+    def validate_cookie_secure_and_env(self) -> "Settings":
+        if self.APP_ENV == "production":
+            if self.COOKIE_SECURE is False:
+                raise ValueError("COOKIE_SECURE cannot be false in production")
+            self.COOKIE_SECURE = True
+        else:
+            if self.COOKIE_SECURE is None:
+                self.COOKIE_SECURE = False
+        return self
 
     @property
     def async_database_url(self) -> str:

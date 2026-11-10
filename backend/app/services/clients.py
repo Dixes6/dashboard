@@ -1,6 +1,7 @@
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.phone import prepare_phone_prefix_search
@@ -125,8 +126,12 @@ async def create_client(db: AsyncSession, data: ClientCreate) -> dict[str, Any]:
         notes=data.notes,
     )
     db.add(client)
-    await db.commit()
-    await db.refresh(client)
+    try:
+        await db.commit()
+        await db.refresh(client)
+    except IntegrityError as exc:
+        await db.rollback()
+        raise ValueError("Клиент с таким номером телефона уже существует") from exc
 
     return {
         "id": client.id,
@@ -164,7 +169,11 @@ async def update_client(
     if data.notes is not None:
         client.notes = data.notes
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise ValueError("Клиент с таким номером телефона уже существует") from exc
     return await get_client_with_stats(db, client_id)
 
 

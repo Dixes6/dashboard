@@ -3,9 +3,24 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+def _validate_occurred_on_bounds(v: date | None) -> date | None:
+    if v is None:
+        return v
+    if v < date(2000, 1, 1):
+        raise ValueError("Дата не может быть раньше 2000-01-01")
+    today = date.today()
+    try:
+        max_date = today.replace(year=today.year + 1)
+    except ValueError:
+        max_date = today.replace(year=today.year + 1, day=28)
+    if v > max_date:
+        raise ValueError("Дата не может быть позже чем сегодня + 1 год")
+    return v
+
+
 class IncomeCreate(BaseModel):
-    amount: int = Field(..., gt=0, description="Сумма дохода в рублях")
-    source: str = Field(..., min_length=1, description="Источник дохода")
+    amount: int = Field(..., ge=1, le=100_000_000, description="Сумма дохода в рублях")
+    source: str = Field(..., min_length=1, max_length=300, description="Источник дохода")
     occurred_on: date = Field(..., description="Дата поступления")
 
     @field_validator("source")
@@ -16,10 +31,17 @@ class IncomeCreate(BaseModel):
             raise ValueError("Источник дохода не может быть пустым")
         return trimmed
 
+    @field_validator("occurred_on")
+    @classmethod
+    def validate_occurred_on(cls, value: date) -> date:
+        res = _validate_occurred_on_bounds(value)
+        assert res is not None
+        return res
+
 
 class IncomeUpdate(BaseModel):
-    amount: int | None = Field(default=None, gt=0)
-    source: str | None = Field(default=None, min_length=1)
+    amount: int | None = Field(default=None, ge=1, le=100_000_000)
+    source: str | None = Field(default=None, min_length=1, max_length=300)
     occurred_on: date | None = None
 
     @field_validator("source")
@@ -31,6 +53,11 @@ class IncomeUpdate(BaseModel):
                 raise ValueError("Источник дохода не может быть пустым")
             return trimmed
         return value
+
+    @field_validator("occurred_on")
+    @classmethod
+    def validate_occurred_on(cls, value: date | None) -> date | None:
+        return _validate_occurred_on_bounds(value)
 
 
 class IncomeResponse(BaseModel):
@@ -44,8 +71,8 @@ class IncomeResponse(BaseModel):
 
 
 class ExpenseCreate(BaseModel):
-    amount: int = Field(..., gt=0, description="Сумма расхода в рублях")
-    description: str = Field(..., min_length=1, description="Описание расхода")
+    amount: int = Field(..., ge=1, le=100_000_000, description="Сумма расхода в рублях")
+    description: str = Field(..., min_length=1, max_length=300, description="Описание расхода")
     occurred_on: date = Field(..., description="Дата расхода")
 
     @field_validator("description")
@@ -56,10 +83,17 @@ class ExpenseCreate(BaseModel):
             raise ValueError("Описание расхода не может быть пустым")
         return trimmed
 
+    @field_validator("occurred_on")
+    @classmethod
+    def validate_occurred_on(cls, value: date) -> date:
+        res = _validate_occurred_on_bounds(value)
+        assert res is not None
+        return res
+
 
 class ExpenseUpdate(BaseModel):
-    amount: int | None = Field(default=None, gt=0)
-    description: str | None = Field(default=None, min_length=1)
+    amount: int | None = Field(default=None, ge=1, le=100_000_000)
+    description: str | None = Field(default=None, min_length=1, max_length=300)
     occurred_on: date | None = None
 
     @field_validator("description")
@@ -71,6 +105,11 @@ class ExpenseUpdate(BaseModel):
                 raise ValueError("Описание расхода не может быть пустым")
             return trimmed
         return value
+
+    @field_validator("occurred_on")
+    @classmethod
+    def validate_occurred_on(cls, value: date | None) -> date | None:
+        return _validate_occurred_on_bounds(value)
 
 
 class ExpenseResponse(BaseModel):

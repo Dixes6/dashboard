@@ -4,9 +4,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ServiceCreate(BaseModel):
-    name: str = Field(..., min_length=1, description="Название услуги")
-    price: int = Field(..., ge=0, description="Цена в рублях")
-    duration_minutes: int = Field(..., gt=0, description="Длительность в минутах")
+    name: str = Field(..., min_length=1, max_length=200, description="Название услуги")
+    price: int = Field(..., ge=0, le=10_000_000, description="Цена в рублях")
+    duration_minutes: int = Field(..., ge=1, le=1440, description="Длительность в минутах")
     sort_order: int = Field(default=0, description="Порядок сортировки")
     is_active: bool = Field(default=True, description="Флаг активности")
 
@@ -20,9 +20,9 @@ class ServiceCreate(BaseModel):
 
 
 class ServiceUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1)
-    price: int | None = Field(default=None, ge=0)
-    duration_minutes: int | None = Field(default=None, gt=0)
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    price: int | None = Field(default=None, ge=0, le=10_000_000)
+    duration_minutes: int | None = Field(default=None, ge=1, le=1440)
     sort_order: int | None = None
     is_active: bool | None = None
 

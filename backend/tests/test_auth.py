@@ -1,4 +1,5 @@
 from app.core.config import settings
+from app.main import app
 from fastapi.testclient import TestClient
 
 
@@ -75,14 +76,11 @@ def test_logout(client: TestClient, test_user):
 
 
 def test_login_rate_limiter_blocks_after_5_failed_attempts(client: TestClient, test_user):
-    headers = {"x-forwarded-for": "192.168.1.50"}
-
     # 5 неудачных попыток должны вернуть 401
     for i in range(5):
         res = client.post(
             "/api/auth/login",
             json={"login": "owner", "password": f"wrong_{i}"},
-            headers=headers,
         )
         assert res.status_code == 401, f"Попытка {i + 1} должна вернуть 401"
 
@@ -90,15 +88,22 @@ def test_login_rate_limiter_blocks_after_5_failed_attempts(client: TestClient, t
     blocked_res = client.post(
         "/api/auth/login",
         json={"login": "owner", "password": "correct_password"},
-        headers=headers,
     )
     assert blocked_res.status_code == 429
     assert "Слишком много попыток входа" in blocked_res.json()["detail"]
 
-    # Другой IP не должен быть заблокирован
-    other_ip_res = client.post(
+    # X-Forwarded-For не должен сбрасывать блокировку (заголовок игнорируется)
+    spoofed_res = client.post(
         "/api/auth/login",
         json={"login": "owner", "password": "correct_password"},
-        headers={"x-forwarded-for": "192.168.1.51"},
+        headers={"x-forwarded-for": "192.168.1.99"},
     )
-    assert other_ip_res.status_code == 200
+    assert spoofed_res.status_code == 429
+
+    # Другой IP (реальный client.host) не должен быть заблокирован
+    with TestClient(app, client=("192.168.1.51", 50000)) as other_client:
+        other_ip_res = other_client.post(
+            "/api/auth/login",
+            json={"login": "owner", "password": "correct_password"},
+        )
+        assert other_ip_res.status_code == 200

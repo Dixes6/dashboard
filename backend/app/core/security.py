@@ -1,3 +1,4 @@
+import logging
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -5,9 +6,11 @@ from typing import Any
 
 import jwt
 from argon2 import PasswordHasher
-from argon2.exceptions import VerificationError, VerifyMismatchError
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 _pwd_hasher = PasswordHasher()
 
@@ -19,8 +22,11 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         return _pwd_hasher.verify(hashed_password, plain_password)
-    except (VerifyMismatchError, VerificationError, Exception):
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
         return False
+    except Exception as exc:
+        logger.exception("Неожиданная ошибка при проверке пароля: %s", exc)
+        raise
 
 
 def create_access_token(subject: str | int, expires_delta: timedelta | None = None) -> str:
