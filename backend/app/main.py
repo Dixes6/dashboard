@@ -6,10 +6,12 @@ from app.api.calendar import router as calendar_router
 from app.api.clients import router as clients_router
 from app.api.days import router as days_router
 from app.api.expenses import router as expenses_router
+from app.api.finance import router as finance_router
 from app.api.health import router as health_router
 from app.api.incomes import router as incomes_router
 from app.api.services import router as services_router
 from app.api.settings import router as settings_router
+from app.api.stats import router as stats_router
 from app.api.work_windows import router as work_windows_router
 from app.core.config import settings
 
@@ -29,3 +31,5 @@ app.include_router(work_windows_router, prefix="/api/work-windows", tags=["work-
 app.include_router(appointments_router, prefix="/api/appointments", tags=["appointments"])
 app.include_router(calendar_router, prefix="/api/calendar", tags=["calendar"])
 app.include_router(days_router, prefix="/api/days", tags=["days"])
+app.include_router(stats_router, prefix="/api/stats", tags=["stats"])
+app.include_router(finance_router, prefix="/api/finance", tags=["finance"])
