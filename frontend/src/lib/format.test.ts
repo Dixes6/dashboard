@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatMoney, formatPhone, formatDate, formatTime } from './format'
+import { formatMoney, formatPhone, formatDate, formatTime, formatDuration } from './format'
 
 describe('formatMoney', () => {
   it('formats positive integers with non-breaking space and ruble sign', () => {
@@ -87,5 +87,29 @@ describe('formatTime', () => {
 
   it('returns empty string for invalid time', () => {
     expect(formatTime('invalid')).toBe('')
+  })
+})
+
+describe('formatDuration', () => {
+  it('formats hours and minutes', () => {
+    expect(formatDuration(90)).toBe('1 ч 30 мин')
+    expect(formatDuration(125)).toBe('2 ч 5 мин')
+  })
+
+  it('formats exact hours', () => {
+    expect(formatDuration(60)).toBe('1 ч')
+    expect(formatDuration(120)).toBe('2 ч')
+  })
+
+  it('formats only minutes', () => {
+    expect(formatDuration(45)).toBe('45 мин')
+    expect(formatDuration(30)).toBe('30 мин')
+    expect(formatDuration(15)).toBe('15 мин')
+  })
+
+  it('handles 0 and negative or NaN values', () => {
+    expect(formatDuration(0)).toBe('0 мин')
+    expect(formatDuration(-10)).toBe('0 мин')
+    expect(formatDuration(NaN)).toBe('0 мин')
   })
 })

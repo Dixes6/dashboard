@@ -64,3 +64,23 @@ export function formatTime(date: Date | string): string {
   if (!d) return ''
   return format(d, 'HH:mm', { locale: ru })
 }
+
+/**
+ * Форматирует длительность в минутах в человекочитаемый вид (напр. "1 ч 30 мин", "1 ч", "45 мин")
+ */
+export function formatDuration(minutes: number): string {
+  if (isNaN(minutes) || minutes <= 0) {
+    return '0 мин'
+  }
+  const rounded = Math.round(minutes)
+  const hours = Math.floor(rounded / 60)
+  const mins = rounded % 60
+
+  if (hours > 0 && mins > 0) {
+    return `${hours} ч ${mins} мин`
+  }
+  if (hours > 0) {
+    return `${hours} ч`
+  }
+  return `${mins} мин`
+}
