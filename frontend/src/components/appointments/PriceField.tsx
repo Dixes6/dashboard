@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { formatMoney } from '../../lib'
 
 interface PriceFieldProps {
@@ -8,24 +8,26 @@ interface PriceFieldProps {
 }
 
 export const PriceField: React.FC<PriceFieldProps> = ({ listPrice, value, onChange }) => {
-  const [userEdited, setUserEdited] = useState(false)
+  const [prevValue, setPrevValue] = useState(value)
+  const [prevListPrice, setPrevListPrice] = useState(listPrice)
   const [inputValue, setInputValue] = useState(String(value))
+  const [userEdited, setUserEdited] = useState(value !== listPrice)
 
-  // Когда list_price меняется — сбрасываем к нему, если пользователь не редактировал
-  useEffect(() => {
+  // Обновляем inputValue при изменении внешнего value (паттерн adjusting state during render)
+  if (value !== prevValue) {
+    setPrevValue(value)
+    setInputValue(String(value))
+    setUserEdited(value !== listPrice)
+  }
+
+  // Обновляем цену при смене listPrice, если пользователь не менял вручную
+  if (listPrice !== prevListPrice) {
+    setPrevListPrice(listPrice)
     if (!userEdited) {
       setInputValue(String(listPrice))
       onChange(listPrice, false)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listPrice, userEdited])
-
-  // Синхронизируем inputValue при внешнем сбросе value
-  useEffect(() => {
-    if (!userEdited) {
-      setInputValue(String(value))
-    }
-  }, [value, userEdited])
+  }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value.replace(/\D/g, '')
@@ -49,10 +51,10 @@ export const PriceField: React.FC<PriceFieldProps> = ({ listPrice, value, onChan
     }
   }
 
-  const isOverridden = userEdited && value !== listPrice
+  const isOverridden = value !== listPrice
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5 font-sans">
       <div className="flex items-center justify-between gap-2">
         <label htmlFor="final-price" className="text-xs text-muted font-medium">
           Итого, ₽

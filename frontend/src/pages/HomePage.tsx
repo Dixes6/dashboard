@@ -18,9 +18,9 @@ import type { AppointmentResponse, WorkWindowResponse } from '../api'
 import { Card, EmptyState, Button, Input, BottomSheet, Spinner, ToastProvider, useToast } from '../components/ui'
 import { Calendar } from '../components/Calendar'
 import { AppointmentFormSheet } from '../components/appointments/AppointmentFormSheet'
+import { AppointmentDetailSheet } from '../components/appointments/AppointmentDetailSheet'
 import {
   formatMoney,
-  formatPhone,
   formatDate,
   formatTime,
   formatDuration,
@@ -861,90 +861,20 @@ export const HomePage: React.FC = () => {
       </BottomSheet>
 
       {/* Карточка записи (BottomSheet) */}
-      <BottomSheet
-        isOpen={!!selectedAppointment}
-        onClose={() => setSelectedAppointment(null)}
-        title="Карточка записи"
-      >
-        {selectedAppointment && (
-          <div className="space-y-4 text-text font-sans">
-            <div className="flex justify-between items-start gap-2">
-              <div>
-                <h3 className="text-lg font-extrabold text-text font-sans">
-                  {selectedAppointment.client.name}
-                </h3>
-                {selectedAppointment.client.phone && (
-                  <p className="text-sm text-muted">
-                    {formatPhone(selectedAppointment.client.phone)}
-                  </p>
-                )}
-              </div>
-              <span
-                className={`inline-flex items-center text-xs font-semibold rounded-[8px] py-[3px] px-2 leading-none ${
-                  selectedAppointment.status === 'scheduled'
-                    ? 'bg-primary-soft text-primary-ink'
-                    : selectedAppointment.status === 'completed'
-                      ? 'bg-success-soft text-success-ink'
-                      : 'bg-border text-muted'
-                }`}
-              >
-                {statusLabels[selectedAppointment.status]}
-              </span>
-            </div>
-
-            <div className="p-3 bg-bg rounded-btn border border-border">
-              <p className="text-xs text-muted font-medium mb-1">Дата и время</p>
-              <p className="text-base font-bold text-text">
-                {formatDate(selectedAppointment.local_date, 'd MMMM yyyy')}, {formatTime(selectedAppointment.local_start_time)}–{formatTime(selectedAppointment.local_end_time)}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-xs text-muted font-medium mb-2">Услуги</p>
-              <ul className="divide-y divide-border border border-border rounded-btn overflow-hidden">
-                {selectedAppointment.services.map((svc, idx) => (
-                  <li key={`${svc.service_id}-${svc.position ?? idx}`} className="p-3 flex justify-between items-center text-sm bg-surface">
-                    <div>
-                      <p className="font-semibold text-text">{svc.name_snapshot}</p>
-                      <p className="text-xs text-muted">{formatDuration(svc.duration_snapshot)}</p>
-                    </div>
-                    <span className="font-bold text-text">{formatMoney(svc.price_snapshot)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="flex justify-between items-center pt-2 border-t border-border">
-              <div>
-                <span className="text-sm text-muted">Итого</span>
-                {selectedAppointment.price_overridden && (
-                  <span className="text-xs text-muted line-through block">
-                    По прайсу: {formatMoney(selectedAppointment.list_price)}
-                  </span>
-                )}
-              </div>
-              <span className="text-xl font-extrabold text-text">
-                {formatMoney(selectedAppointment.final_price)}
-              </span>
-            </div>
-
-            {selectedAppointment.note && (
-              <div className="p-3 bg-bg rounded-btn border border-border text-xs text-muted">
-                <p className="font-medium mb-1 text-text">Заметка:</p>
-                <p>{selectedAppointment.note}</p>
-              </div>
-            )}
-
-            <Button
-              variant="secondary"
-              className="w-full"
-              onClick={() => setSelectedAppointment(null)}
-            >
-              Закрыть
-            </Button>
-          </div>
-        )}
-      </BottomSheet>
+      {settings && (
+        <AppointmentDetailSheet
+          isOpen={!!selectedAppointment}
+          onClose={() => setSelectedAppointment(null)}
+          appointment={selectedAppointment}
+          settings={settings}
+          onUpdated={(updated) => {
+            setSelectedAppointment(updated)
+          }}
+          onDeleted={() => {
+            setSelectedAppointment(null)
+          }}
+        />
+      )}
 
       {/* BottomSheet: Доход */}
       <BottomSheet

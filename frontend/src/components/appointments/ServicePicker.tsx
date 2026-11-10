@@ -11,9 +11,9 @@ interface ServicePickerProps {
 }
 
 export const ServicePicker: React.FC<ServicePickerProps> = ({ selectedIds, onChange, error }) => {
-  const { data: services, isLoading } = useServices()
+  const { data: services, isLoading } = useServices({ includeArchived: true })
 
-  const activeServices = (services ?? []).filter((s: ServiceResponse) => s.is_active)
+  const visibleServices = (services ?? []).filter((s: ServiceResponse) => s.is_active || selectedIds.includes(s.id))
 
   const toggle = (id: number) => {
     onChange(
@@ -24,7 +24,7 @@ export const ServicePicker: React.FC<ServicePickerProps> = ({ selectedIds, onCha
   }
 
   const selectedServices = selectedIds.map((id) => {
-    const svc = activeServices.find((s) => s.id === id)
+    const svc = (services ?? []).find((s) => s.id === id)
     return svc ? { price: svc.price, duration_minutes: svc.duration_minutes } : null
   }).filter(Boolean) as { price: number; duration_minutes: number }[]
 
@@ -38,11 +38,11 @@ export const ServicePicker: React.FC<ServicePickerProps> = ({ selectedIds, onCha
     <div className="space-y-2">
       <label className="text-xs text-muted font-medium">Услуги</label>
 
-      {activeServices.length === 0 ? (
-        <p className="text-sm text-muted py-2">Нет активных услуг</p>
+      {visibleServices.length === 0 ? (
+        <p className="text-sm text-muted py-2">Нет доступных услуг</p>
       ) : (
         <div className="space-y-2">
-          {activeServices.map((svc: ServiceResponse) => {
+          {visibleServices.map((svc: ServiceResponse) => {
             const isSelected = selectedIds.includes(svc.id)
             return (
               <button
