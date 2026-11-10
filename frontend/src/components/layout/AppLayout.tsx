@@ -60,7 +60,7 @@ export const AppLayout: React.FC = () => {
 
       {/* Slide-out Menu Drawer */}
       {isMenuOpen ? (
-        <div className="fixed inset-0 z-40 flex">
+        <div className="fixed inset-0 z-50 flex">
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-text/40 transition-opacity duration-150 cursor-pointer"
@@ -73,7 +73,7 @@ export const AppLayout: React.FC = () => {
             role="dialog"
             aria-modal="true"
             aria-label="Главное меню"
-            className="relative z-50 w-72 max-w-[80vw] h-full bg-surface shadow-2xl flex flex-col justify-between pt-[calc(1rem+env(safe-area-inset-top))] pb-[calc(1.5rem+env(safe-area-inset-bottom))] px-4 transition-transform duration-200"
+            className="relative z-10 w-72 max-w-[80vw] h-full bg-surface shadow-2xl flex flex-col justify-between pt-[calc(1rem+env(safe-area-inset-top))] pb-[calc(1.5rem+env(safe-area-inset-bottom))] px-4 transition-transform duration-200"
           >
             <div className="flex flex-col gap-6">
               <div className="flex items-center justify-between pb-3 border-b border-border">

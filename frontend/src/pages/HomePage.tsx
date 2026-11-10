@@ -6,8 +6,6 @@ import {
   useCalendar,
   useDay,
   useNextAppointment,
-  useCreateIncome,
-  useCreateExpense,
   useCreateWindow,
   useUpdateWindow,
   useDeleteWindow,
@@ -15,10 +13,11 @@ import {
   ApiError,
 } from '../api'
 import type { AppointmentResponse, WorkWindowResponse } from '../api'
-import { Card, EmptyState, Button, Input, BottomSheet, Spinner, ToastProvider, useToast } from '../components/ui'
+import { Card, EmptyState, Button, BottomSheet, Spinner, ToastProvider, useToast } from '../components/ui'
 import { Calendar } from '../components/Calendar'
 import { AppointmentFormSheet } from '../components/appointments/AppointmentFormSheet'
 import { AppointmentDetailSheet } from '../components/appointments/AppointmentDetailSheet'
+import { EntrySheet } from '../components/finance/EntrySheet'
 import {
   formatMoney,
   formatDate,
@@ -30,7 +29,6 @@ import {
   calculateBulkWorkDates,
 } from '../lib'
 
-const MAX_AMOUNT = 100_000_000
 const WORK_WINDOW_STORAGE_KEY = 'last_work_window_time'
 
 interface EditableWindow {
@@ -97,9 +95,6 @@ export const HomePage: React.FC = () => {
 
   const { data: nextAppointment, isLoading: nextLoading, error: nextError } = useNextAppointment()
 
-  const createIncome = useCreateIncome()
-  const createExpense = useCreateExpense()
-
   const createWindow = useCreateWindow()
   const updateWindow = useUpdateWindow()
   const deleteWindow = useDeleteWindow()
@@ -125,21 +120,6 @@ export const HomePage: React.FC = () => {
   const [bulkOnlyFuture, setBulkOnlyFuture] = useState(true)
   const [bulkError, setBulkError] = useState<string | null>(null)
 
-  const [incomeForm, setIncomeForm] = useState<{
-    amount: string
-    source: string
-    occurredOn: string
-  }>({ amount: '', source: '', occurredOn: today })
-
-  const [expenseForm, setExpenseForm] = useState<{
-    amount: string
-    description: string
-    occurredOn: string
-  }>({ amount: '', description: '', occurredOn: today })
-
-  const [incomeError, setIncomeError] = useState<string | null>(null)
-  const [expenseError, setExpenseError] = useState<string | null>(null)
-
   // Sync selected date with URL
   React.useEffect(() => {
     const currentParams = new URLSearchParams(location.search)
@@ -147,72 +127,6 @@ export const HomePage: React.FC = () => {
       navigate(`?date=${selectedDate}`, { replace: true })
     }
   }, [selectedDate, navigate, location.search])
-
-  const handleIncomeSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    setIncomeError(null)
-    const amount = Number(incomeForm.amount)
-    if (!amount || amount < 1 || amount > MAX_AMOUNT) {
-      setIncomeError('Сумма должна быть от 1 до 100 000 000 рублей')
-      return
-    }
-    if (!incomeForm.source.trim()) {
-      setIncomeError('Укажите источник дохода')
-      return
-    }
-    createIncome.mutate(
-      {
-        amount,
-        source: incomeForm.source.trim(),
-        occurred_on: incomeForm.occurredOn,
-      },
-      {
-        onSuccess: () => {
-          setIncomeSheetOpen(false)
-          resetIncomeForm()
-          showToast('Доход добавлен', 'success')
-        },
-      },
-    )
-  }
-
-  const handleExpenseSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    setExpenseError(null)
-    const amount = Number(expenseForm.amount)
-    if (!amount || amount < 1 || amount > MAX_AMOUNT) {
-      setExpenseError('Сумма должна быть от 1 до 100 000 000 рублей')
-      return
-    }
-    if (!expenseForm.description.trim()) {
-      setExpenseError('Укажите, что куплено')
-      return
-    }
-    createExpense.mutate(
-      {
-        amount,
-        description: expenseForm.description.trim(),
-        occurred_on: expenseForm.occurredOn,
-      },
-      {
-        onSuccess: () => {
-          setExpenseSheetOpen(false)
-          resetExpenseForm()
-          showToast('Расход добавлен', 'success')
-        },
-      },
-    )
-  }
-
-  const resetIncomeForm = () => {
-    setIncomeForm({ amount: '', source: '', occurredOn: today })
-    setIncomeError(null)
-  }
-
-  const resetExpenseForm = () => {
-    setExpenseForm({ amount: '', description: '', occurredOn: today })
-    setExpenseError(null)
-  }
 
   const statusLabels: Record<string, string> = {
     scheduled: 'Запланирована',
@@ -631,7 +545,7 @@ export const HomePage: React.FC = () => {
       </div>
 
       {/* Нижняя панель */}
-      <footer className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] border-t border-border bg-surface/95 backdrop-blur-md px-4 pt-2 pb-4 [padding-bottom:calc(1rem+env(safe-area-inset-bottom))] z-40">
+      <footer className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] border-t border-border bg-surface/95 backdrop-blur-md px-4 pt-2 pb-4 [padding-bottom:calc(1rem+env(safe-area-inset-bottom))] z-30">
         <div className="flex gap-2">
           <button
             type="button"
@@ -877,66 +791,20 @@ export const HomePage: React.FC = () => {
       )}
 
       {/* BottomSheet: Доход */}
-      <BottomSheet
+      <EntrySheet
         isOpen={incomeSheetOpen}
         onClose={() => setIncomeSheetOpen(false)}
-        title="Доход"
-      >
-        <form onSubmit={handleIncomeSubmit} className="space-y-4">
-          <Input
-            label="Сумма (₽)"
-            value={incomeForm.amount}
-            onChange={(e) => setIncomeForm({ ...incomeForm, amount: e.target.value })}
-            error={incomeError}
-            inputMode="numeric"
-          />
-          <Input
-            label="Источник"
-            value={incomeForm.source}
-            onChange={(e) => setIncomeForm({ ...incomeForm, source: e.target.value })}
-          />
-          <Input
-            label="Дата"
-            value={incomeForm.occurredOn}
-            onChange={(e) => setIncomeForm({ ...incomeForm, occurredOn: e.target.value })}
-            type="date"
-          />
-          <Button type="submit" variant="primary" loading={createIncome.isPending}>
-            Сохранить
-          </Button>
-        </form>
-      </BottomSheet>
+        type="income"
+        defaultDate={today}
+      />
 
       {/* BottomSheet: Расход */}
-      <BottomSheet
+      <EntrySheet
         isOpen={expenseSheetOpen}
         onClose={() => setExpenseSheetOpen(false)}
-        title="Расход"
-      >
-        <form onSubmit={handleExpenseSubmit} className="space-y-4">
-          <Input
-            label="Сумма (₽)"
-            value={expenseForm.amount}
-            onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
-            error={expenseError}
-            inputMode="numeric"
-          />
-          <Input
-            label="Что куплено"
-            value={expenseForm.description}
-            onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
-          />
-          <Input
-            label="Дата"
-            value={expenseForm.occurredOn}
-            onChange={(e) => setExpenseForm({ ...expenseForm, occurredOn: e.target.value })}
-            type="date"
-          />
-          <Button type="submit" variant="primary" loading={createExpense.isPending}>
-            Сохранить
-          </Button>
-        </form>
-      </BottomSheet>
+        type="expense"
+        defaultDate={today}
+      />
       {/* BottomSheet: Форма создания записи */}
       {settings && (
         <AppointmentFormSheet

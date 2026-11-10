@@ -12,7 +12,7 @@ export function formatMoney(amount: number): string {
   const isNegative = rounded < 0
   const absStr = Math.abs(rounded).toString()
   const formatted = absStr.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00A0')
-  return `${isNegative ? '-' : ''}${formatted}\u00A0₽`
+  return `${isNegative ? '\u2212' : ''}${formatted}\u00A0₽`
 }
 
 /**
@@ -209,3 +209,45 @@ export function isMonthBoundary(a: Date | string, b: Date | string): boolean {
   if (!da || !db) return false
   return differenceInCalendarMonths(da, db) !== 0
 }
+
+/**
+ * Склонение существительных с числительными (напр. 1 раз, 2 раза, 5 раз, 11 раз, 21 раз).
+ */
+export function pluralRu(n: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(Math.round(n))
+  const mod100 = abs % 100
+  const mod10 = abs % 10
+
+  let word = many
+  if (mod100 < 11 || mod100 > 19) {
+    if (mod10 === 1) {
+      word = one
+    } else if (mod10 >= 2 && mod10 <= 4) {
+      word = few
+    }
+  }
+  return `${n} ${word}`
+}
+
+/**
+ * Форматирует месяц "YYYY-MM" в заголовок вида "Ноябрь 2026" (с заглавной буквы, без "г.").
+ */
+export function formatMonthTitle(monthStr: string): string {
+  if (!monthStr || !/^\d{4}-\d{2}$/.test(monthStr)) {
+    return monthStr
+  }
+  const [year, month] = monthStr.split('-').map(Number)
+  const d = new Date(year, month - 1, 1)
+  const raw = format(d, 'LLLL yyyy', { locale: ru })
+  return raw.charAt(0).toUpperCase() + raw.slice(1)
+}
+
+/**
+ * Краткий формат даты, напр. "10 нояб."
+ */
+export function formatShortDate(date: Date | string): string {
+  const d = toValidDate(date)
+  if (!d) return ''
+  return format(d, 'd MMM', { locale: ru })
+}
+

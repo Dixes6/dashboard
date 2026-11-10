@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { Plus, Search, Phone, MessageCircle, Users, X } from 'lucide-react'
+import { Search, Phone, MessageCircle, Users, X } from 'lucide-react'
 import {
   useInfiniteClients,
   useClientsTotalCount,
@@ -224,9 +224,8 @@ export const ClientsPage: React.FC = () => {
         <Button
           variant="primary"
           onClick={handleOpenCreate}
-          className="min-h-[44px] h-11 px-3.5 sm:px-4 text-sm"
+          className="min-h-[44px] h-11 px-3.5 sm:px-4 text-sm whitespace-nowrap"
         >
-          <Plus className="w-4 h-4 shrink-0" />
           <span>Добавить клиента</span>
         </Button>
       </div>

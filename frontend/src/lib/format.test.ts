@@ -11,6 +11,9 @@ import {
   formatDayHeader,
   formatNextAppointmentHeader,
   isMonthBoundary,
+  pluralRu,
+  formatMonthTitle,
+  formatShortDate,
 } from './format'
 
 describe('formatMoney', () => {
@@ -33,8 +36,9 @@ describe('formatMoney', () => {
     expect(formatMoney(1800.6)).toBe('1\u00A0801\u00A0₽')
   })
 
-  it('formats negative amounts correctly', () => {
-    expect(formatMoney(-1500)).toBe('-1\u00A0500\u00A0₽')
+  it('formats negative amounts correctly with true minus U+2212', () => {
+    expect(formatMoney(-1500)).toBe('\u22121\u00A0500\u00A0₽')
+    expect(formatMoney(-1200)).toBe('\u22121\u00A0200\u00A0₽')
   })
 
   it('handles NaN gracefully', () => {
@@ -233,3 +237,29 @@ describe('isMonthBoundary', () => {
     expect(isMonthBoundary('2026-10-15', '2026-10-20')).toBe(false)
   })
 })
+
+describe('pluralRu', () => {
+  it('handles forms correctly', () => {
+    expect(pluralRu(1, 'раз', 'раза', 'раз')).toBe('1 раз')
+    expect(pluralRu(2, 'раз', 'раза', 'раз')).toBe('2 раза')
+    expect(pluralRu(5, 'раз', 'раза', 'раз')).toBe('5 раз')
+    expect(pluralRu(11, 'раз', 'раза', 'раз')).toBe('11 раз')
+    expect(pluralRu(21, 'раз', 'раза', 'раз')).toBe('21 раз')
+    expect(pluralRu(22, 'раз', 'раза', 'раз')).toBe('22 раза')
+  })
+})
+
+describe('formatMonthTitle', () => {
+  it('returns capitalized month name and year without "г."', () => {
+    expect(formatMonthTitle('2026-11')).toBe('Ноябрь 2026')
+    expect(formatMonthTitle('2026-05')).toBe('Май 2026')
+  })
+})
+
+describe('formatShortDate', () => {
+  it('formats short date correctly', () => {
+    expect(formatShortDate('2026-11-10')).toBe('10 нояб.')
+    expect(formatShortDate('2026-01-05')).toBe('5 янв.')
+  })
+})
+

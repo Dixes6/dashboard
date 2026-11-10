@@ -111,6 +111,7 @@ export function useCreateIncome() {
       })
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stats'] })
       queryClient.invalidateQueries({ queryKey: ['day'] })
       queryClient.invalidateQueries({ queryKey: ['calendar'] })
       queryClient.invalidateQueries({ queryKey: ['finance'] })
@@ -130,6 +131,7 @@ export function useCreateExpense() {
       })
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stats'] })
       queryClient.invalidateQueries({ queryKey: ['day'] })
       queryClient.invalidateQueries({ queryKey: ['calendar'] })
       queryClient.invalidateQueries({ queryKey: ['finance'] })

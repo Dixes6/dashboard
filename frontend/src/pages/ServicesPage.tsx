@@ -1,5 +1,5 @@
 import React, { useState, useId } from 'react'
-import { Plus, ChevronUp, ChevronDown, Sparkles } from 'lucide-react'
+import { ChevronUp, ChevronDown, Sparkles } from 'lucide-react'
 import { useServices, useCreateService, useUpdateService } from '../api'
 import type { ServiceResponse } from '../api'
 import { ApiError } from '../api/client'
@@ -245,9 +245,8 @@ export const ServicesPage: React.FC = () => {
         <Button
           variant="primary"
           onClick={handleOpenCreate}
-          className="min-h-[44px] h-11 px-3.5 sm:px-4 text-sm"
+          className="min-h-[44px] h-11 px-3.5 sm:px-4 text-sm whitespace-nowrap"
         >
-          <Plus className="w-4 h-4 shrink-0" />
           <span>Добавить услугу</span>
         </Button>
       </div>
