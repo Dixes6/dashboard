@@ -21,10 +21,13 @@
   --border: #EADFE2;
   --text: #2E2329;
   --muted: #7A6B73;
-  --primary: #C4637A;
+  --primary: #B5506A;
   --primary-soft: #F6E3E8;
+  --primary-ink: #8A3F55;
   --accent: #B89B72;
   --success: #5E9C7E;
+  --success-soft: #E4F2EA;
+  --success-ink: #2F7A55;
   --danger: #C8453F;
 }
 
@@ -36,8 +39,11 @@
   --color-muted: var(--muted);
   --color-primary: var(--primary);
   --color-primary-soft: var(--primary-soft);
+  --color-primary-ink: var(--primary-ink);
   --color-accent: var(--accent);
   --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-ink: var(--success-ink);
   --color-danger: var(--danger);
 
   --font-heading: 'Cormorant', serif;

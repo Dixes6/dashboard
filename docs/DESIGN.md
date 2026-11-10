@@ -5,9 +5,10 @@
 ## Токены
 --bg: #FAF6F4;  --surface: #FFFFFF;  --border: #EADFE2
 --text: #2E2329;  --muted: #7A6B73
---primary: #C4637A;  --primary-soft: #F6E3E8
+--primary: #B5506A;  --primary-soft: #F6E3E8;  --primary-ink: #8A3F55
 --accent: #B89B72
---success: #5E9C7E;  --danger: #C8453F
+--success: #5E9C7E;  --success-soft: #E4F2EA;  --success-ink: #2F7A55
+--danger: #C8453F
 Радиусы: карточки 16px, кнопки и поля 12px. Тени мягкие и низкие. Отступы кратны 4px.
 
 ## Шрифты (ставить локально через @fontsource)

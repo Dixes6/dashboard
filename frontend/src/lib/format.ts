@@ -1,4 +1,4 @@
-import { format, parseISO, isValid } from 'date-fns'
+import { format, parseISO, isValid, differenceInCalendarMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
 /**
@@ -57,9 +57,20 @@ export function formatDate(date: Date | string, pattern = 'd MMMM yyyy'): string
 }
 
 /**
- * Форматирует время в формате ЧЧ:ММ
+ * Форматирует время в формате ЧЧ:ММ.
+ * Принимает "11:00:00", "11:00" и ISO-строку/Date, возвращает "11:00".
  */
 export function formatTime(date: Date | string): string {
+  if (typeof date === 'string') {
+    const trimmed = date.trim()
+    const timeMatch = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/)
+    if (timeMatch) {
+      const hours = timeMatch[1].padStart(2, '0')
+      const minutes = timeMatch[2]
+      return `${hours}:${minutes}`
+    }
+  }
+
   const d = toValidDate(date)
   if (!d) return ''
   return format(d, 'HH:mm', { locale: ru })
@@ -83,4 +94,118 @@ export function formatDuration(minutes: number): string {
     return `${hours} ч`
   }
   return `${mins} мин`
+}
+
+/**
+ * Определяет локальную дату «сегодня» по часовому поясу из настроек.
+ * Использует Intl.DateTimeFormat с переданным timeZone.
+ */
+export function getTodayInTimezone(timezone: string): string {
+  const formatter = new Intl.DateTimeFormat('ru-RU', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const parts = formatter.formatToParts(new Date())
+  const year = parts.find((p) => p.type === 'year')?.value
+  const month = parts.find((p) => p.type === 'month')?.value
+  const day = parts.find((p) => p.type === 'day')?.value
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Определяет локальную дату «завтра» по часовому поясу из настроек.
+ */
+export function getTomorrowInTimezone(timezone: string): string {
+  const today = getTodayInTimezone(timezone)
+  const d = new Date(today + 'T00:00:00')
+  d.setDate(d.getDate() + 1)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/**
+ * Форматирует заголовок дня относительно сегодня/завтра в часовом поясе из настроек.
+ * Возвращает строку вида "Сегодня", "Завтра" или "d MMMM".
+ */
+export function formatRelativeDay(date: Date | string, timezone: string): string {
+  const d = toValidDate(date)
+  if (!d) return ''
+  const todayStr = getTodayInTimezone(timezone)
+  const tomorrowStr = getTomorrowInTimezone(timezone)
+  const targetStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+  if (targetStr === todayStr) return 'Сегодня'
+  if (targetStr === tomorrowStr) return 'Завтра'
+  return format(d, 'd MMMM', { locale: ru })
+}
+
+/**
+ * Форматирует заголовок выбранного дня:
+ * для сегодняшнего — "Сегодня, 10 ноября", для остальных — "12 ноября, четверг".
+ */
+export function formatDayHeader(date: Date | string, timezone: string): string {
+  const d = toValidDate(date)
+  if (!d) return ''
+  const todayStr = getTodayInTimezone(timezone)
+  const targetStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+  if (targetStr === todayStr) {
+    return `Сегодня, ${format(d, 'd MMMM', { locale: ru })}`
+  }
+  return `${format(d, 'd MMMM', { locale: ru })}, ${format(d, 'EEEE', { locale: ru })}`
+}
+
+/**
+ * Форматирует строку ближайшей записи: "Ближайшая запись · завтра, 11:00"
+ * (варианты: "сегодня, 15:00", "завтра, 11:00", "12 ноября, 11:00")
+ */
+export function formatNextAppointmentHeader(
+  dateStr: string,
+  timeStr: string,
+  timezone: string,
+): string {
+  const time = formatTime(timeStr)
+  let dayPart = ''
+  if (isTodayInTimezone(dateStr, timezone)) {
+    dayPart = 'сегодня'
+  } else if (isTomorrowInTimezone(dateStr, timezone)) {
+    dayPart = 'завтра'
+  } else {
+    dayPart = formatDate(dateStr, 'd MMMM')
+  }
+  return `Ближайшая запись · ${dayPart}, ${time}`
+}
+
+/**
+ * Проверяет, попадает ли дата на «сегодня» в часовом поясе из настроек.
+ */
+export function isTodayInTimezone(date: Date | string, timezone: string): boolean {
+  const d = toValidDate(date)
+  if (!d) return false
+  const targetStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return targetStr === getTodayInTimezone(timezone)
+}
+
+/**
+ * Проверяет, попадает ли дата на «завтра» в часовом поясе из настроек.
+ */
+export function isTomorrowInTimezone(date: Date | string, timezone: string): boolean {
+  const d = toValidDate(date)
+  if (!d) return false
+  const targetStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return targetStr === getTomorrowInTimezone(timezone)
+}
+
+/**
+ * Проверяет, изменился ли месяц между двумя датами (границу месяца).
+ */
+export function isMonthBoundary(a: Date | string, b: Date | string): boolean {
+  const da = toValidDate(a)
+  const db = toValidDate(b)
+  if (!da || !db) return false
+  return differenceInCalendarMonths(da, db) !== 0
 }

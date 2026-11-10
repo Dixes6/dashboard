@@ -13,9 +13,14 @@ export default {
         primary: {
           DEFAULT: 'var(--primary)',
           soft: 'var(--primary-soft)',
+          ink: 'var(--primary-ink)',
         },
         accent: 'var(--accent)',
-        success: 'var(--success)',
+        success: {
+          DEFAULT: 'var(--success)',
+          soft: 'var(--success-soft)',
+          ink: 'var(--success-ink)',
+        },
         danger: 'var(--danger)',
       },
       fontFamily: {
