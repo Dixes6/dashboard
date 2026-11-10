@@ -1,2 +1,5 @@
-// API client placeholder
-export {}
+export * from './client'
+export type * from './schema'
+export * from './authContext'
+export * from './auth'
+export * from './useAuth'

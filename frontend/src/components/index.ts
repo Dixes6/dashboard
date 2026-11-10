@@ -1,2 +1,1 @@
-// Shared components placeholder
-export {}
+export * from './ui'

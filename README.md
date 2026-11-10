@@ -106,14 +106,47 @@ docker compose down
    npm install
    ```
 
-3. Запустите dev-сервер:
+3. Генерация типов API (требуется запущенный бэкенд на порту 8000):
+   ```bash
+   npm run gen:api
+   ```
+   Скрипт загружает OpenAPI-спецификацию из `http://localhost:8000/openapi.json` и формирует файл типов `src/api/schema.d.ts`.
+
+4. Запустите dev-сервер:
    ```bash
    npm run dev
    ```
+   Все запросы к `/api` автоматически проксируются Vite dev-сервером на `http://localhost:8000`, обеспечивая работу cookie авторизации.
 
-4. Откройте в браузере: [http://localhost:5173](http://localhost:5173)
+5. Откройте в браузере: [http://localhost:5173](http://localhost:5173)
 
-5. Сборка для production:
+6. Запуск тестов:
+   ```bash
+   npm test
+   ```
+
+7. Сборка для production и линтинг:
    ```bash
    npm run build
+   npm run lint
    ```
+
+---
+
+### 5. Совместный запуск Backend и Frontend
+
+1. В первом терминале запустите базу данных и бэкенд:
+   ```bash
+   docker compose up -d
+   cd backend
+   uvicorn app.main:app --reload --port 8000
+   ```
+
+2. Во втором терминале запустите фронтенд:
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+
+3. Перейдите по адресу [http://localhost:5173](http://localhost:5173). Приложение готово к работе!
+
