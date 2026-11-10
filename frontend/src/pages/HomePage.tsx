@@ -17,6 +17,7 @@ import {
 import type { AppointmentResponse, WorkWindowResponse } from '../api'
 import { Card, EmptyState, Button, Input, BottomSheet, Spinner, ToastProvider, useToast } from '../components/ui'
 import { Calendar } from '../components/Calendar'
+import { AppointmentFormSheet } from '../components/appointments/AppointmentFormSheet'
 import {
   formatMoney,
   formatPhone,
@@ -107,6 +108,7 @@ export const HomePage: React.FC = () => {
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentResponse | null>(null)
   const [incomeSheetOpen, setIncomeSheetOpen] = useState(false)
   const [expenseSheetOpen, setExpenseSheetOpen] = useState(false)
+  const [appointmentSheetOpen, setAppointmentSheetOpen] = useState(false)
 
   // Управление окнами выбранного дня
   const [workWindowsSheetOpen, setWorkWindowsSheetOpen] = useState(false)
@@ -633,7 +635,7 @@ export const HomePage: React.FC = () => {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => showToast('Форма записи будет следующим шагом')}
+            onClick={() => setAppointmentSheetOpen(true)}
             className="flex-1 bg-primary text-surface h-12 min-h-[48px] rounded-btn font-medium text-base flex items-center justify-center gap-2 shadow-soft hover:opacity-95 transition-opacity cursor-pointer"
           >
             <span className="text-lg leading-none">+</span>
@@ -1005,6 +1007,21 @@ export const HomePage: React.FC = () => {
           </Button>
         </form>
       </BottomSheet>
+      {/* BottomSheet: Форма создания записи */}
+      {settings && (
+        <AppointmentFormSheet
+          isOpen={appointmentSheetOpen}
+          onClose={() => setAppointmentSheetOpen(false)}
+          selectedDate={selectedDate}
+          settings={settings}
+          dayAppointments={appointments}
+          onSuccess={(localDate) => {
+            setAppointmentSheetOpen(false)
+            setSelectedDate(localDate)
+            showToast('Запись добавлена', 'success')
+          }}
+        />
+      )}
     </ToastProvider>
   )
 }

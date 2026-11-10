@@ -24,10 +24,14 @@ function buildClientsUrl(params: ClientsQueryParams): string {
   return `/api/clients${qs ? `?${qs}` : ''}`
 }
 
-export function useClients(params: ClientsQueryParams = {}) {
+export function useClients(
+  params: ClientsQueryParams = {},
+  options?: { enabled?: boolean },
+) {
   return useQuery<ClientListResponse>({
     queryKey: ['clients', 'list', params],
     queryFn: () => apiClient<ClientListResponse>(buildClientsUrl(params)),
+    enabled: options?.enabled,
   })
 }
 
