@@ -78,3 +78,27 @@ def test_slot_step_minutes_validation(client: TestClient, test_user):
         )
         assert ok_res.status_code == 200
         assert ok_res.json()["slot_step_minutes"] == valid_step
+
+
+def test_settings_singleton_constraint(client: TestClient, test_user):
+    import psycopg
+    import pytest
+
+    from tests.conftest import sync_test_url
+
+    _login_as_owner(client, test_user)
+
+    # First get creates/ensures id = 1 exists
+    res = client.get("/api/settings")
+    assert res.status_code == 200
+
+    # Attempting to insert a row with id != 1 must violate CHECK (id = 1)
+    with psycopg.connect(sync_test_url) as conn:
+        with conn.cursor() as cur:
+            with pytest.raises(psycopg.errors.CheckViolation):
+                cur.execute(
+                    "INSERT INTO settings (id, business_name, timezone, slot_step_minutes) "
+                    "VALUES (2, 'Other', 'UTC', 15)"
+                )
+
+

@@ -1,5 +1,7 @@
 import zoneinfo
+from collections.abc import Sequence
 from datetime import date, datetime, time, timedelta, timezone
+from typing import Any
 
 
 def to_utc(dt: datetime, tz_name: str) -> datetime:
@@ -56,21 +58,21 @@ def check_work_window_overlap(
 
 
 def appointment_fits_in_windows(
-    local_start: time,
-    local_end: time,
-    windows: list[tuple[time, time]],
+    local_start: Any,
+    local_end: Any,
+    windows: Sequence[tuple[Any, Any]],
 ) -> bool:
-    """
-    Return True if the appointment's local time range fits entirely within
-    at least one continuous chain of work windows of the day.
-    Actually: return True if the appointment is fully covered by the union of windows.
+    """Return True if the appointment's local range fits entirely within
+
+    at least one continuous chain of work windows.
+    Supports either (time, time) or (datetime, datetime) tuples.
     """
     if not windows:
         return False
 
     sorted_w = sorted(windows, key=lambda x: x[0])
 
-    covered_until: time | None = None
+    covered_until = None
     started = False
 
     for ws, we in sorted_w:

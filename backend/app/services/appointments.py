@@ -1,8 +1,8 @@
 import zoneinfo
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -11,6 +11,7 @@ from app.core.time_utils import (
     appointment_fits_in_windows,
     check_appointment_overlap,
     compute_ends_at,
+    from_utc,
     local_date_of,
     local_time_of,
     to_utc,
@@ -22,6 +23,8 @@ from app.models.service import Service
 from app.models.work_window import WorkWindow
 from app.schemas.appointment import AppointmentCreate, AppointmentUpdate
 from app.services.settings import get_or_create_settings
+
+APPOINTMENT_LOCK_KEY = 42_424_242
 
 
 class NeedsConfirmationError(Exception):
@@ -153,16 +156,27 @@ async def _run_warnings(
     warnings: list[str] = []
     overlapping_ids: list[int] = []
 
-    local_dt_date = local_date_of(starts_at_utc, tz_name)
-    local_start = local_time_of(starts_at_utc, tz_name)
-    local_end = local_time_of(ends_at_utc, tz_name)
+    local_start_date = local_date_of(starts_at_utc, tz_name)
+    local_end_date = local_date_of(ends_at_utc, tz_name)
 
-    ww_stmt = select(WorkWindow).where(WorkWindow.date == local_dt_date)
-    ww_result = await db.execute(ww_stmt)
-    windows = [(w.start_time, w.end_time) for w in ww_result.scalars().all()]
-
-    if not appointment_fits_in_windows(local_start, local_end, windows):
+    if local_start_date != local_end_date:
         warnings.append("outside_work_window")
+    else:
+        ww_stmt = select(WorkWindow).where(WorkWindow.date == local_start_date)
+        ww_result = await db.execute(ww_stmt)
+        local_tz = zoneinfo.ZoneInfo(tz_name)
+        local_start_dt = from_utc(starts_at_utc, tz_name)
+        local_end_dt = from_utc(ends_at_utc, tz_name)
+        windows = [
+            (
+                datetime.combine(w.date, w.start_time, tzinfo=local_tz),
+                datetime.combine(w.date, w.end_time, tzinfo=local_tz),
+            )
+            for w in ww_result.scalars().all()
+        ]
+
+        if not appointment_fits_in_windows(local_start_dt, local_end_dt, windows):
+            warnings.append("outside_work_window")
 
     appt_stmt = select(Appointment).where(
         Appointment.deleted_at.is_(None),
@@ -186,6 +200,8 @@ async def _run_warnings(
 async def create_appointment(
     db: AsyncSession, data: AppointmentCreate
 ) -> dict[str, Any]:
+    await db.execute(select(func.pg_advisory_xact_lock(APPOINTMENT_LOCK_KEY)))
+
     settings_obj = await get_or_create_settings(db)
     tz_name = settings_obj.timezone
 
@@ -280,13 +296,14 @@ async def list_appointments(
         local_start = datetime(
             date_filter.year, date_filter.month, date_filter.day, 0, 0, 0, tzinfo=tz
         )
-        local_end = datetime(
-            date_filter.year, date_filter.month, date_filter.day, 23, 59, 59, 999999, tzinfo=tz
+        next_day = date_filter + timedelta(days=1)
+        local_next_day = datetime(
+            next_day.year, next_day.month, next_day.day, 0, 0, 0, tzinfo=tz
         )
         utc_start = local_start.astimezone(timezone.utc)
-        utc_end = local_end.astimezone(timezone.utc)
+        utc_next_day = local_next_day.astimezone(timezone.utc)
         stmt = stmt.where(
-            Appointment.starts_at >= utc_start, Appointment.starts_at <= utc_end
+            Appointment.starts_at >= utc_start, Appointment.starts_at < utc_next_day
         )
     else:
         if date_from is not None:
@@ -296,11 +313,12 @@ async def list_appointments(
             utc_start = local_start.astimezone(timezone.utc)
             stmt = stmt.where(Appointment.starts_at >= utc_start)
         if date_to is not None:
-            local_end = datetime(
-                date_to.year, date_to.month, date_to.day, 23, 59, 59, 999999, tzinfo=tz
+            next_day = date_to + timedelta(days=1)
+            local_next_day = datetime(
+                next_day.year, next_day.month, next_day.day, 0, 0, 0, tzinfo=tz
             )
-            utc_end = local_end.astimezone(timezone.utc)
-            stmt = stmt.where(Appointment.starts_at <= utc_end)
+            utc_next_day = local_next_day.astimezone(timezone.utc)
+            stmt = stmt.where(Appointment.starts_at < utc_next_day)
 
     if status is not None:
         stmt = stmt.where(Appointment.status == status)
@@ -319,6 +337,8 @@ async def update_appointment(
     appointment_id: int,
     data: AppointmentUpdate,
 ) -> dict[str, Any] | None:
+    await db.execute(select(func.pg_advisory_xact_lock(APPOINTMENT_LOCK_KEY)))
+
     appointment = await _load_appointment(db, appointment_id)
     if not appointment:
         return None
@@ -413,10 +433,13 @@ async def update_appointment(
 
     if data.ends_at is not None:
         appointment.ends_at = to_utc(data.ends_at, tz_name)
+    elif data.starts_at is not None or data.service_ids is not None:
+        total_duration = sum(s.duration_snapshot for s in appointment.appointment_services)
+        appointment.ends_at = compute_ends_at(appointment.starts_at, total_duration)
 
     warnings: list[str] = []
     overlapping_ids: list[int] = []
-    if data.starts_at is not None or data.service_ids is not None:
+    if data.starts_at is not None or data.service_ids is not None or data.ends_at is not None:
         warnings, overlapping_ids = await _run_warnings(
             db,
             appointment.starts_at,

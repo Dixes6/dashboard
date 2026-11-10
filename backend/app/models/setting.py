@@ -24,6 +24,10 @@ class Setting(Base):
 
     __table_args__ = (
         CheckConstraint(
+            "id = 1",
+            name="chk_settings_singleton_id",
+        ),
+        CheckConstraint(
             "slot_step_minutes > 0",
             name="chk_settings_slot_step_minutes_positive",
         ),

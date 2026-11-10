@@ -13,7 +13,12 @@ def _login(client: TestClient, test_user):
     assert res.status_code == 200
 
 
-def _create_service(client: TestClient, name: str = "Маникюр", price: int = 1500, duration: int = 60) -> dict:
+def _create_service(
+    client: TestClient,
+    name: str = "Маникюр",
+    price: int = 1500,
+    duration: int = 60,
+) -> dict:
     res = client.post(
         "/api/services",
         json={"name": name, "price": price, "duration_minutes": duration},
@@ -36,7 +41,11 @@ def _create_work_window(
     return res.json()
 
 
-def _create_client_via_api(client: TestClient, name: str = "Анна", phone: str = "79001112233") -> dict:
+def _create_client_via_api(
+    client: TestClient,
+    name: str = "Анна",
+    phone: str = "79001112233",
+) -> dict:
     res = client.post(
         "/api/clients",
         json={"name": name, "phone": phone},
@@ -191,7 +200,8 @@ def test_service_ids_patch_keeps_old_snapshots(client: TestClient, test_user):
             assert row == (1800, 1800, False)
 
             cur.execute(
-                "SELECT service_id, price_snapshot FROM appointment_services WHERE appointment_id = %s ORDER BY position",
+                "SELECT service_id, price_snapshot FROM appointment_services "
+                "WHERE appointment_id = %s ORDER BY position",
                 (appt_id,),
             )
             svc_rows = cur.fetchall()
@@ -525,8 +535,172 @@ def test_patch_service_ids_add_new_service(client: TestClient, test_user):
             assert row == (1800, 600, True)
 
             cur.execute(
-                "SELECT service_id, price_snapshot FROM appointment_services WHERE appointment_id = %s ORDER BY position",
+                "SELECT service_id, price_snapshot FROM appointment_services "
+                "WHERE appointment_id = %s ORDER BY position",
                 (appt_id,),
             )
             svc_rows = cur.fetchall()
             assert svc_rows == [(svc_a["id"], 1000), (svc_b["id"], 800)]
+
+
+def test_patch_ends_at_recalculation_cases(client: TestClient, test_user):
+    _login(client, test_user)
+    svc_1 = _create_service(client, name="Услуга 1", price=1000, duration=30)
+    svc_2 = _create_service(client, name="Услуга 2", price=1500, duration=45)
+    _create_work_window(client, "2024-06-15", "08:00:00", "20:00:00")
+    cl = _create_client_via_api(client)
+
+    # Создаём исходную запись: starts_at = 10:00, svc_1 (30 минут) -> ends_at = 10:30
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T10:00:00",
+            "service_ids": [svc_1["id"]],
+        },
+    )
+    assert res.status_code == 201
+    appt_id = res.json()["id"]
+    assert res.json()["local_end_time"] == "10:30:00"
+
+    # Случай 1: PATCH с service_ids без ends_at ->
+    # пересчёт ends_at = starts_at + сумма duration (30 + 45 = 75 мин -> 11:15)
+    p1 = client.patch(
+        f"/api/appointments/{appt_id}",
+        json={"service_ids": [svc_1["id"], svc_2["id"]]},
+    )
+    assert p1.status_code == 200, p1.text
+    assert p1.json()["local_end_time"] == "11:15:00"
+
+    # Случай 2: PATCH со starts_at без ends_at -> пересчёт ends_at = 12:00 + 75 мин = 13:15
+    p2 = client.patch(
+        f"/api/appointments/{appt_id}",
+        json={"starts_at": "2024-06-15T12:00:00"},
+    )
+    assert p2.status_code == 200, p2.text
+    assert p2.json()["local_start_time"] == "12:00:00"
+    assert p2.json()["local_end_time"] == "13:15:00"
+
+    # Случай 3: PATCH с явным ends_at -> используется именно он
+    p3 = client.patch(
+        f"/api/appointments/{appt_id}",
+        json={"ends_at": "2024-06-15T14:30:00"},
+    )
+    assert p3.status_code == 200, p3.text
+    assert p3.json()["local_end_time"] == "14:30:00"
+
+    # Случай 4: ни одно из трёх полей не передано (например, обновление note) -> ends_at не трогаем
+    p4 = client.patch(
+        f"/api/appointments/{appt_id}",
+        json={"note": "Обновлённая заметка"},
+    )
+    assert p4.status_code == 200, p4.text
+    assert p4.json()["note"] == "Обновлённая заметка"
+    assert p4.json()["local_end_time"] == "14:30:00"
+
+
+def test_work_window_midnight_boundary_warning(client: TestClient, test_user):
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    # Рабочие окна на оба дня: конец 15 июня и начало 16 июня
+    _create_work_window(client, "2024-06-15", "20:00:00", "23:59:59")
+    _create_work_window(client, "2024-06-16", "00:00:00", "04:00:00")
+    cl = _create_client_via_api(client)
+
+    # Запись 23:30 - 00:30 (через полночь): локальная дата конца (16 июня) != дата начала (15 июня)
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T23:30:00",
+            "service_ids": [svc["id"]],
+            "force": False,
+        },
+    )
+    assert res.status_code == 409
+    detail = res.json()["detail"]
+    assert detail["code"] == "needs_confirmation"
+    assert "outside_work_window" in detail["warnings"]
+
+    # С force=True запись создаётся, но предупреждение возвращается
+    res_forced = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T23:30:00",
+            "service_ids": [svc["id"]],
+            "force": True,
+        },
+    )
+    assert res_forced.status_code == 201
+    assert "outside_work_window" in res_forced.json()["warnings"]
+
+
+def test_advisory_lock_called_on_create_and_update(client: TestClient, test_user):
+    from unittest.mock import patch
+
+    from app.services.appointments import APPOINTMENT_LOCK_KEY, func
+
+    _login(client, test_user)
+    svc = _create_service(client, duration=30)
+    _create_work_window(client, "2024-06-15", "09:00:00", "18:00:00")
+    cl = _create_client_via_api(client)
+
+    with patch(
+        "app.services.appointments.func.pg_advisory_xact_lock",
+        wraps=func.pg_advisory_xact_lock,
+    ) as mock_lock:
+        res = client.post(
+            "/api/appointments",
+            json={
+                "client_id": cl["id"],
+                "starts_at": "2024-06-15T09:00:00",
+                "service_ids": [svc["id"]],
+            },
+        )
+        assert res.status_code == 201
+        mock_lock.assert_called_with(APPOINTMENT_LOCK_KEY)
+
+        appt_id = res.json()["id"]
+        mock_lock.reset_mock()
+
+        patch_res = client.patch(
+            f"/api/appointments/{appt_id}",
+            json={"note": "Тест блокировки"},
+        )
+        assert patch_res.status_code == 200
+        mock_lock.assert_called_with(APPOINTMENT_LOCK_KEY)
+
+
+def test_duplicate_service_ids_double_price_and_duration(client: TestClient, test_user):
+    _login(client, test_user)
+    svc = _create_service(client, name="Наращивание ногтя", price=2000, duration=45)
+    _create_work_window(client, "2024-06-15", "09:00:00", "18:00:00")
+    cl = _create_client_via_api(client)
+
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-06-15T10:00:00",
+            "service_ids": [svc["id"], svc["id"]],
+        },
+    )
+    assert res.status_code == 201, res.text
+    data = res.json()
+
+    # Двойная цена (2000 * 2 = 4000)
+    assert data["list_price"] == 4000
+    assert data["final_price"] == 4000
+    assert data["price_overridden"] is False
+
+    # Двойная длительность (45 * 2 = 90 мин): с 10:00 до 11:30
+    assert data["local_start_time"] == "10:00:00"
+    assert data["local_end_time"] == "11:30:00"
+
+    assert len(data["services"]) == 2
+    assert data["services"][0]["service_id"] == svc["id"]
+    assert data["services"][1]["service_id"] == svc["id"]
+    assert data["services"][0]["price_snapshot"] == 2000
+    assert data["services"][1]["price_snapshot"] == 2000
+

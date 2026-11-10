@@ -25,7 +25,7 @@ async def get_calendar_month(db: AsyncSession, month_str: str) -> list[dict[str,
         if not (1 <= month <= 12):
             raise ValueError()
     except (ValueError, TypeError):
-        raise ValueError("Параметр month должен быть в формате YYYY-MM")
+        raise ValueError("Параметр month должен быть в формате YYYY-MM") from None
 
     num_days = calendar.monthrange(year, month)[1]
     start_date = date(year, month, 1)
@@ -36,9 +36,12 @@ async def get_calendar_month(db: AsyncSession, month_str: str) -> list[dict[str,
     tz = zoneinfo.ZoneInfo(tz_name)
 
     month_start_local = datetime(year, month, 1, 0, 0, 0, tzinfo=tz)
-    month_end_local = datetime(year, month, num_days, 23, 59, 59, 999999, tzinfo=tz)
+    if month == 12:
+        next_month_start_local = datetime(year + 1, 1, 1, 0, 0, 0, tzinfo=tz)
+    else:
+        next_month_start_local = datetime(year, month + 1, 1, 0, 0, 0, tzinfo=tz)
     month_start_utc = month_start_local.astimezone(timezone.utc)
-    month_end_utc = month_end_local.astimezone(timezone.utc)
+    next_month_start_utc = next_month_start_local.astimezone(timezone.utc)
 
     # 1. Рабочие окна за месяц
     ww_stmt = (
@@ -54,7 +57,7 @@ async def get_calendar_month(db: AsyncSession, month_str: str) -> list[dict[str,
         select(Appointment.starts_at, Appointment.status, Appointment.final_price)
         .where(
             Appointment.starts_at >= month_start_utc,
-            Appointment.starts_at <= month_end_utc,
+            Appointment.starts_at < next_month_start_utc,
             Appointment.deleted_at.is_(None),
             Appointment.status.in_([AppointmentStatus.SCHEDULED, AppointmentStatus.COMPLETED]),
         )
