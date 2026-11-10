@@ -9,6 +9,7 @@ export interface CalendarProps {
   days: { date: string; has_work_window: boolean; appointments_count: number; completed_income: number }[]
   today: string // YYYY-MM-DD
   onDateSelect: (date: string) => void
+  onFillMonthClick?: () => void
 }
 
 export const Calendar: React.FC<CalendarProps> = ({
@@ -17,6 +18,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   days,
   today,
   onDateSelect,
+  onFillMonthClick,
 }) => {
   const [year, monthNum] = month.split('-').map(Number)
 
@@ -44,26 +46,38 @@ export const Calendar: React.FC<CalendarProps> = ({
   return (
     <div className="flex flex-col gap-3">
       {/* Заголовок месяца: Ноябрь 2026 (первая буква заглавная, без «г.»), Cormorant, 22px, жирный */}
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => onDateSelect(`${String(prevMonth.year).padStart(4, '0')}-${String(prevMonth.month).padStart(2, '0')}-01`)}
-          className="min-w-[44px] min-h-[44px] flex items-center justify-center text-text hover:text-primary transition-colors cursor-pointer rounded-full"
-          aria-label="Предыдущий месяц"
-        >
-          <ChevronLeft className="w-5 h-5" />
-        </button>
-        <h2 className="font-heading font-bold text-text text-[22px] select-none">
-          {monthTitle}
-        </h2>
-        <button
-          type="button"
-          onClick={() => onDateSelect(`${String(nextMonth.year).padStart(4, '0')}-${String(nextMonth.month).padStart(2, '0')}-01`)}
-          className="min-w-[44px] min-h-[44px] flex items-center justify-center text-text hover:text-primary transition-colors cursor-pointer rounded-full"
-          aria-label="Следующий месяц"
-        >
-          <ChevronRight className="w-5 h-5" />
-        </button>
+      <div className="flex items-center justify-between gap-1 flex-wrap sm:flex-nowrap">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onDateSelect(`${String(prevMonth.year).padStart(4, '0')}-${String(prevMonth.month).padStart(2, '0')}-01`)}
+            className="w-10 h-10 min-w-[40px] min-h-[40px] flex items-center justify-center text-text hover:text-primary transition-colors cursor-pointer rounded-full"
+            aria-label="Предыдущий месяц"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <h2 className="font-heading font-bold text-text text-[20px] sm:text-[22px] select-none">
+            {monthTitle}
+          </h2>
+          <button
+            type="button"
+            onClick={() => onDateSelect(`${String(nextMonth.year).padStart(4, '0')}-${String(nextMonth.month).padStart(2, '0')}-01`)}
+            className="w-10 h-10 min-w-[40px] min-h-[40px] flex items-center justify-center text-text hover:text-primary transition-colors cursor-pointer rounded-full"
+            aria-label="Следующий месяц"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
+
+        {onFillMonthClick && (
+          <button
+            type="button"
+            onClick={onFillMonthClick}
+            className="text-xs font-semibold text-primary-ink bg-primary-soft hover:bg-primary-soft/80 px-2.5 py-1.5 rounded-btn transition-colors cursor-pointer min-h-[36px] flex items-center gap-1 shrink-0"
+          >
+            Заполнить месяц
+          </button>
+        )}
       </div>
 
       {/* Названия дней недели: цвет --muted, 12px */}
