@@ -15,21 +15,36 @@ from app.api.stats import router as stats_router
 from app.api.work_windows import router as work_windows_router
 from app.core.config import settings
 
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    description="Dashboard для мастера маникюра",
-)
 
-app.include_router(health_router, prefix="/api", tags=["health"])
-app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
-app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
-app.include_router(services_router, prefix="/api/services", tags=["services"])
-app.include_router(clients_router, prefix="/api/clients", tags=["clients"])
-app.include_router(incomes_router, prefix="/api/incomes", tags=["incomes"])
-app.include_router(expenses_router, prefix="/api/expenses", tags=["expenses"])
-app.include_router(work_windows_router, prefix="/api/work-windows", tags=["work-windows"])
-app.include_router(appointments_router, prefix="/api/appointments", tags=["appointments"])
-app.include_router(calendar_router, prefix="/api/calendar", tags=["calendar"])
-app.include_router(days_router, prefix="/api/days", tags=["days"])
-app.include_router(stats_router, prefix="/api/stats", tags=["stats"])
-app.include_router(finance_router, prefix="/api/finance", tags=["finance"])
+def create_app() -> FastAPI:
+    is_production = settings.APP_ENV == "production"
+    app_instance = FastAPI(
+        title=settings.PROJECT_NAME,
+        description="Dashboard для мастера маникюра",
+        docs_url=None if is_production else "/docs",
+        redoc_url=None if is_production else "/redoc",
+        openapi_url=None if is_production else "/openapi.json",
+    )
+
+    app_instance.include_router(health_router, prefix="/api", tags=["health"])
+    app_instance.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+    app_instance.include_router(settings_router, prefix="/api/settings", tags=["settings"])
+    app_instance.include_router(services_router, prefix="/api/services", tags=["services"])
+    app_instance.include_router(clients_router, prefix="/api/clients", tags=["clients"])
+    app_instance.include_router(incomes_router, prefix="/api/incomes", tags=["incomes"])
+    app_instance.include_router(expenses_router, prefix="/api/expenses", tags=["expenses"])
+    app_instance.include_router(
+        work_windows_router, prefix="/api/work-windows", tags=["work-windows"]
+    )
+    app_instance.include_router(
+        appointments_router, prefix="/api/appointments", tags=["appointments"]
+    )
+    app_instance.include_router(calendar_router, prefix="/api/calendar", tags=["calendar"])
+    app_instance.include_router(days_router, prefix="/api/days", tags=["days"])
+    app_instance.include_router(stats_router, prefix="/api/stats", tags=["stats"])
+    app_instance.include_router(finance_router, prefix="/api/finance", tags=["finance"])
+
+    return app_instance
+
+
+app = create_app()
