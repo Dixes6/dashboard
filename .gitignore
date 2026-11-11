@@ -40,11 +40,15 @@ htmlcov/
 # Environment and secrets
 .env
 *.env
+.env.*
+.env.production
 !.env.example
+!.env.production.example
 
-# Database data
+# Database data and backups
 pgdata/
 postgres_data/
+backups/
 
 # Node / Frontend
 node_modules/
