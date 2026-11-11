@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +8,11 @@ from app.core.phone import prepare_phone_prefix_search
 from app.models.appointment import Appointment, AppointmentStatus
 from app.models.client import Client
 from app.schemas.client import ClientCreate, ClientUpdate
+
+
+def escape_like(text: str) -> str:
+    r"""Escapes %, _ and \ for SQL LIKE/ILIKE patterns."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 async def get_client_by_id(db: AsyncSession, client_id: int) -> Client | None:
@@ -60,7 +65,16 @@ async def list_clients_with_stats(
     base_where = [Client.deleted_at.is_(None)]
 
     if q and q.strip():
-        base_where.append(Client.name.ilike(f"%{q.strip()}%"))
+        q_escaped = escape_like(q.strip())
+        base_where.append(Client.name.ilike(f"%{q_escaped}%", escape="\\"))
+        starts_with_cond = Client.name.ilike(f"{q_escaped}%", escape="\\")
+        order_clause = [
+            case((starts_with_cond, 0), else_=1),
+            Client.name.asc(),
+            Client.id.asc(),
+        ]
+    else:
+        order_clause = [Client.name.asc(), Client.id.asc()]
 
     if phone and phone.strip():
         phone_pattern = prepare_phone_prefix_search(phone.strip())
@@ -86,7 +100,7 @@ async def list_clients_with_stats(
         )
         .where(*base_where)
         .group_by(Client.id)
-        .order_by(Client.name.asc(), Client.id.asc())
+        .order_by(*order_clause)
         .limit(limit)
         .offset(offset)
     )

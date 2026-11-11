@@ -162,7 +162,9 @@ def test_client_visits_and_earned_aggregates(client: TestClient, test_user):
             # 1. Завершена, final_price = 2500 (идёт в доход)
             cur.execute(
                 """
-                INSERT INTO appointments (client_id, starts_at, ends_at, status, source, list_price, final_price, price_overridden)
+                INSERT INTO appointments
+                (client_id, starts_at, ends_at, status, source, list_price,
+                 final_price, price_overridden)
                 VALUES (%s, %s, %s, 'completed', 'manual', 2500, 2500, false)
                 """,
                 (client_id, now, ends),
@@ -170,7 +172,9 @@ def test_client_visits_and_earned_aggregates(client: TestClient, test_user):
             # 2. Завершена со скидкой, final_price = 3000 (идёт в доход)
             cur.execute(
                 """
-                INSERT INTO appointments (client_id, starts_at, ends_at, status, source, list_price, final_price, price_overridden)
+                INSERT INTO appointments
+                (client_id, starts_at, ends_at, status, source, list_price,
+                 final_price, price_overridden)
                 VALUES (%s, %s, %s, 'completed', 'manual', 3500, 3000, true)
                 """,
                 (client_id, now, ends),
@@ -178,7 +182,9 @@ def test_client_visits_and_earned_aggregates(client: TestClient, test_user):
             # 3. Запланирована (НЕ должна идти в доход)
             cur.execute(
                 """
-                INSERT INTO appointments (client_id, starts_at, ends_at, status, source, list_price, final_price, price_overridden)
+                INSERT INTO appointments
+                (client_id, starts_at, ends_at, status, source, list_price,
+                 final_price, price_overridden)
                 VALUES (%s, %s, %s, 'scheduled', 'manual', 2000, 2000, false)
                 """,
                 (client_id, now, ends),
@@ -186,7 +192,9 @@ def test_client_visits_and_earned_aggregates(client: TestClient, test_user):
             # 4. Отменена (НЕ должна идти в доход)
             cur.execute(
                 """
-                INSERT INTO appointments (client_id, starts_at, ends_at, status, source, list_price, final_price, price_overridden)
+                INSERT INTO appointments
+                (client_id, starts_at, ends_at, status, source, list_price,
+                 final_price, price_overridden)
                 VALUES (%s, %s, %s, 'cancelled', 'manual', 2000, 2000, false)
                 """,
                 (client_id, now, ends),
@@ -194,7 +202,9 @@ def test_client_visits_and_earned_aggregates(client: TestClient, test_user):
             # 5. Мягко удалена completed (НЕ должна идти в доход)
             cur.execute(
                 """
-                INSERT INTO appointments (client_id, starts_at, ends_at, status, source, list_price, final_price, price_overridden, deleted_at)
+                INSERT INTO appointments
+                (client_id, starts_at, ends_at, status, source, list_price,
+                 final_price, price_overridden, deleted_at)
                 VALUES (%s, %s, %s, 'completed', 'manual', 5000, 5000, false, %s)
                 """,
                 (client_id, now, ends, now),
@@ -212,3 +222,65 @@ def test_client_visits_and_earned_aggregates(client: TestClient, test_user):
     item = next(c for c in list_res.json()["items"] if c["id"] == client_id)
     assert item["visits_count"] == 2
     assert item["total_earned"] == 5500
+
+
+def test_client_search_by_name_substring_and_case(client: TestClient, test_user):
+    """Поиск по подстроке и разному регистру, с приоритетом префикса."""
+    _login(client, test_user)
+
+    client.post("/api/clients", json={"name": "Таня (Татьяна)", "phone": "89001110001"})
+    client.post("/api/clients", json={"name": "Аня", "phone": "89001110002"})
+    client.post("/api/clients", json={"name": "Ольга", "phone": "89001110003"})
+
+    # Поиск строчными буквами "аня"
+    res = client.get("/api/clients?q=аня")
+    assert res.status_code == 200
+    items = res.json()["items"]
+    # Находит "Аня" и "Таня (Татьяна)", при этом "Аня" (начинается на запрос) идёт первой
+    names = [c["name"] for c in items]
+    assert names == ["Аня", "Таня (Татьяна)"]
+
+    # Поиск заглавными буквами "АНЯ"
+    res_upper = client.get("/api/clients?q=АНЯ")
+    assert res_upper.status_code == 200
+    assert [c["name"] for c in res_upper.json()["items"]] == ["Аня", "Таня (Татьяна)"]
+
+
+def test_client_search_escapes_special_characters(client: TestClient, test_user):
+    """Экранирование спецсимволов % и _ в поисковом запросе."""
+    _login(client, test_user)
+
+    client.post("/api/clients", json={"name": "Мария 100%", "phone": "89002220001"})
+    client.post("/api/clients", json={"name": "Мария Иванова", "phone": "89002220002"})
+    client.post("/api/clients", json={"name": "А_на", "phone": "89002220003"})
+    client.post("/api/clients", json={"name": "Анна", "phone": "89002220004"})
+
+    # Поиск со знаком %: не должен срабатывать как wildcard для "Мария Иванова"
+    res_percent = client.get("/api/clients?q=100%")
+    assert res_percent.status_code == 200
+    assert [c["name"] for c in res_percent.json()["items"]] == ["Мария 100%"]
+
+    # Поиск со знаком _: не должен находить "Анна" по паттерну "А_на"
+    res_underscore = client.get("/api/clients?q=А_на")
+    assert res_underscore.status_code == 200
+    assert [c["name"] for c in res_underscore.json()["items"]] == ["А_на"]
+
+
+def test_client_search_excludes_deleted_client(client: TestClient, test_user):
+    """Мягко удалённый клиент не находится в поиске."""
+    _login(client, test_user)
+
+    res = client.post("/api/clients", json={"name": "Аня Удаленная", "phone": "89003330001"})
+    assert res.status_code == 201
+    created_id = res.json()["id"]
+
+    # Удаляем
+    del_res = client.delete(f"/api/clients/{created_id}")
+    assert del_res.status_code == 200
+
+    # Поиск не должен находить удалённого клиента
+    search_res = client.get("/api/clients?q=Удаленная")
+    assert search_res.status_code == 200
+    assert search_res.json()["total"] == 0
+    assert len(search_res.json()["items"]) == 0
+

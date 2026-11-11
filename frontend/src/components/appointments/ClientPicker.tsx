@@ -26,31 +26,37 @@ export const ClientPicker: React.FC<ClientPickerProps> = ({
   error,
   nameError,
 }) => {
-  const [phoneInput, setPhoneInput] = useState(value?.phone ?? '')
-  const [debouncedPhone, setDebouncedPhone] = useState('')
+  const [queryInput, setQueryInput] = useState(value?.phone ?? '')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Debounce 300ms
+  // Debounce ~250ms
   useEffect(() => {
-    const digits = digitsOnly(phoneInput)
     const timer = setTimeout(() => {
-      setDebouncedPhone(digits)
-    }, 300)
+      setDebouncedQuery(queryInput.trim())
+    }, 250)
     return () => clearTimeout(timer)
-  }, [phoneInput])
+  }, [queryInput])
 
-  const digits = digitsOnly(phoneInput)
-  const isFixed = !!value?.id
-  const isNewClient = !isFixed && digits.length >= 10
+  const isFixed = Boolean(value?.id)
+  const debouncedTrimmed = debouncedQuery.trim()
+  const isDebouncedPhone = debouncedTrimmed.startsWith('+') || /^\d/.test(debouncedTrimmed)
+  const isSearchEnabled = debouncedTrimmed.length >= 2 && !isFixed
 
-  const isSearchEnabled = debouncedPhone.length >= 3 && !isFixed
-  const { data: clientsData } = useClients(
-    { phone: debouncedPhone, limit: 5 },
+  const searchParams = isDebouncedPhone
+    ? { phone: debouncedTrimmed, limit: 5 }
+    : { q: debouncedTrimmed, limit: 5 }
+
+  const { data: clientsData, isLoading } = useClients(
+    searchParams,
     { enabled: isSearchEnabled },
   )
   const suggestions = isSearchEnabled ? (clientsData?.items ?? []) : []
+
+  const digits = digitsOnly(queryInput)
+  const isNewClient = !isFixed && digits.length >= 10
 
   // Закрытие дропдауна при клике вне
   useEffect(() => {
@@ -63,18 +69,30 @@ export const ClientPicker: React.FC<ClientPickerProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handlePhoneInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value
-    setPhoneInput(val)
-    setShowDropdown(true)
-    // Передаём телефон наверх (без id — не зафиксированный клиент)
-    onChange(val.trim() ? { phone: val } : null)
-  }, [onChange])
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value
+      setQueryInput(val)
+      setShowDropdown(true)
+      const trimmed = val.trim()
+      if (!trimmed) {
+        onChange(null)
+      } else {
+        const isPhoneInput = trimmed.startsWith('+') || /^\d/.test(trimmed)
+        if (isPhoneInput) {
+          onChange({ phone: val })
+        } else {
+          onChange({ phone: '', name: val })
+        }
+      }
+    },
+    [onChange],
+  )
 
   const handleSelectSuggestion = useCallback(
     (client: { id: number; name: string; phone: string }) => {
       onChange({ id: client.id, name: client.name, phone: client.phone })
-      setPhoneInput(client.phone)
+      setQueryInput(client.name)
       setShowDropdown(false)
     },
     [onChange],
@@ -82,8 +100,8 @@ export const ClientPicker: React.FC<ClientPickerProps> = ({
 
   const handleClearClient = useCallback(() => {
     onChange(null)
-    setPhoneInput('')
-    setDebouncedPhone('')
+    setQueryInput('')
+    setDebouncedQuery('')
     onNewClientNameChange('')
     setTimeout(() => inputRef.current?.focus(), 50)
   }, [onChange, onNewClientNameChange])
@@ -96,7 +114,9 @@ export const ClientPicker: React.FC<ClientPickerProps> = ({
         <div className="flex items-center gap-2 p-3 bg-primary-soft rounded-btn border border-primary/30">
           <div className="flex-1 min-w-0">
             <span className="text-sm font-bold text-text block truncate">{value.name}</span>
-            <span className="text-xs text-muted">{formatPhone(value.phone)}</span>
+            {value.phone ? (
+              <span className="text-xs text-muted">{formatPhone(value.phone)}</span>
+            ) : null}
           </div>
           <button
             type="button"
@@ -114,24 +134,23 @@ export const ClientPicker: React.FC<ClientPickerProps> = ({
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        <label htmlFor="client-phone" className="text-xs text-muted font-medium">
-          Телефон
+        <label htmlFor="client-search" className="text-xs text-muted font-medium">
+          Клиент
         </label>
         <div className="relative" ref={dropdownRef}>
           <input
             ref={inputRef}
-            id="client-phone"
-            type="tel"
-            inputMode="tel"
-            value={phoneInput}
-            onChange={handlePhoneInput}
+            id="client-search"
+            type="text"
+            value={queryInput}
+            onChange={handleInputChange}
             onFocus={() => setShowDropdown(true)}
-            placeholder="+7 (___) ___-__-__"
+            placeholder="Имя или телефон"
             className={`w-full h-11 px-3 rounded-btn border bg-surface text-text text-sm focus:outline-none focus:ring-2 focus:ring-primary ${
               error ? 'border-danger' : 'border-border'
             }`}
           />
-          {showDropdown && suggestions.length > 0 && (
+          {showDropdown && suggestions.length > 0 ? (
             <div className="absolute z-20 w-full mt-1 bg-surface border border-border rounded-btn shadow-soft overflow-hidden">
               {suggestions.map((client) => (
                 <button
@@ -141,17 +160,24 @@ export const ClientPicker: React.FC<ClientPickerProps> = ({
                   className="w-full px-3 py-2.5 text-left text-sm hover:bg-primary-soft/50 transition-colors cursor-pointer border-b border-border last:border-0 min-h-[44px]"
                 >
                   <span className="font-semibold text-text block">{client.name}</span>
-                  <span className="text-xs text-muted">{formatPhone(client.phone)}</span>
+                  {client.phone ? (
+                    <span className="text-xs text-muted">{formatPhone(client.phone)}</span>
+                  ) : null}
                 </button>
               ))}
             </div>
-          )}
+          ) : null}
+          {showDropdown && isSearchEnabled && suggestions.length === 0 && !isLoading ? (
+            <div className="absolute z-20 w-full mt-1 p-3 bg-surface border border-border rounded-btn shadow-soft text-xs text-muted">
+              Клиент не найден
+            </div>
+          ) : null}
         </div>
-        {error && <p className="text-xs text-danger font-medium">{error}</p>}
+        {error ? <p className="text-xs text-danger font-medium">{error}</p> : null}
       </div>
 
       {/* Поле "Имя клиента" для нового клиента */}
-      {isNewClient && !isFixed && (
+      {isNewClient && !isFixed ? (
         <div className="space-y-1">
           <label htmlFor="client-name" className="text-xs text-muted font-medium">
             Имя клиента <span className="text-primary-ink font-semibold">— новый клиент</span>
@@ -166,9 +192,9 @@ export const ClientPicker: React.FC<ClientPickerProps> = ({
               nameError ? 'border-danger' : 'border-border'
             }`}
           />
-          {nameError && <p className="text-xs text-danger font-medium">{nameError}</p>}
+          {nameError ? <p className="text-xs text-danger font-medium">{nameError}</p> : null}
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

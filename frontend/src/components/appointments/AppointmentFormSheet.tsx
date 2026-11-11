@@ -118,7 +118,9 @@ const AppointmentFormInner: React.FC<AppointmentFormSheetProps> = ({
       } else {
         const phoneDigits = digitsOnly(client.phone ?? '')
         if (phoneDigits.length < 10) {
-          errors.client = 'Введите номер телефона (минимум 10 цифр)'
+          errors.client = client.name
+            ? 'Выберите клиента из списка или введите номер телефона'
+            : 'Введите номер телефона (минимум 10 цифр)'
         } else if (!newClientName.trim()) {
           errors.clientName = 'Введите имя нового клиента'
         }
@@ -266,19 +268,19 @@ const AppointmentFormInner: React.FC<AppointmentFormSheetProps> = ({
                 }`}
               />
             </div>
-            {(validationErrors.date || validationErrors.time) && (
+            {validationErrors.date || validationErrors.time ? (
               <p className="text-xs text-danger font-medium">
                 {validationErrors.date || validationErrors.time}
               </p>
-            )}
-            {endTime && totals.minutes > 0 && (
+            ) : null}
+            {endTime && totals.minutes > 0 ? (
               <p className="text-xs text-muted">
                 Окончание:{' '}
                 <span className="font-semibold text-text">{endTime}</span>
                 {' · '}
                 {formatDuration(totals.minutes)}
               </p>
-            )}
+            ) : null}
           </div>
 
           {/* 4. Статус */}
@@ -332,16 +334,16 @@ const AppointmentFormInner: React.FC<AppointmentFormSheetProps> = ({
             />
           </div>
 
-          {isNewClient && (
+          {isNewClient ? (
             <div className="p-2.5 rounded-btn bg-primary-soft/40 border border-primary/20 text-xs text-primary-ink">
               Будет создан новый клиент
               {newClientName.trim() ? ` «${newClientName.trim()}»` : ''}
             </div>
-          )}
+          ) : null}
 
-          {submitError && (
+          {submitError ? (
             <p className="text-xs text-danger font-medium">{submitError}</p>
-          )}
+          ) : null}
 
           <button
             type="submit"
