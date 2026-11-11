@@ -457,6 +457,7 @@ export interface components {
             note?: string | null;
             /** Final Price */
             final_price?: number | null;
+            status?: components["schemas"]["AppointmentStatus"] | null;
             /**
              * Force
              * @default false

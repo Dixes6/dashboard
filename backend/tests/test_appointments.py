@@ -1,4 +1,6 @@
 """Tests for appointments API."""
+from datetime import datetime, timedelta, timezone
+
 import psycopg
 from fastapi.testclient import TestClient
 
@@ -703,4 +705,176 @@ def test_duplicate_service_ids_double_price_and_duration(client: TestClient, tes
     assert data["services"][1]["service_id"] == svc["id"]
     assert data["services"][0]["price_snapshot"] == 2000
     assert data["services"][1]["price_snapshot"] == 2000
+
+
+def test_create_completed_appointment_in_past(client: TestClient, test_user):
+    """Creating completed appointment in past succeeds and computes prices/snapshots."""
+    _login(client, test_user)
+    svc = _create_service(client, name="Педикюр", price=2500, duration=90)
+    cl = _create_client_via_api(client)
+
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-05-10T11:00:00",
+            "service_ids": [svc["id"]],
+            "status": "completed",
+        },
+    )
+    assert res.status_code == 201, res.text
+    data = res.json()
+    assert data["status"] == "completed"
+    assert data["list_price"] == 2500
+    assert data["final_price"] == 2500
+    assert data["price_overridden"] is False
+    assert len(data["services"]) == 1
+    assert data["services"][0]["name_snapshot"] == "Педикюр"
+    assert data["services"][0]["price_snapshot"] == 2500
+    assert data["services"][0]["duration_snapshot"] == 90
+    assert data["local_date"] == "2024-05-10"
+    assert data["local_start_time"] == "11:00:00"
+    assert data["local_end_time"] == "12:30:00"
+
+
+def test_create_non_scheduled_appointment_in_future_forbidden(client: TestClient, test_user):
+    """Creating non-scheduled appointment in future returns 422."""
+    _login(client, test_user)
+    svc = _create_service(client, price=1000, duration=60)
+    cl = _create_client_via_api(client)
+
+    future_dt = (datetime.now(timezone.utc) + timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    for forbidden_status in ["completed", "no_show", "cancelled"]:
+        res = client.post(
+            "/api/appointments",
+            json={
+                "client_id": cl["id"],
+                "starts_at": future_dt,
+                "service_ids": [svc["id"]],
+                "status": forbidden_status,
+            },
+        )
+        assert res.status_code == 422, f"Expected 422 for {forbidden_status}, got {res.status_code}"
+        assert "Статус кроме 'scheduled' запрещён" in res.text
+
+
+def test_completed_appointment_past_outside_work_window_no_warning(client: TestClient, test_user):
+    """Work window check is skipped for completed status (no warning, no 409)."""
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    # Work window is 14:00-18:00
+    _create_work_window(client, "2024-05-12", "14:00:00", "18:00:00")
+    cl = _create_client_via_api(client)
+
+    # Appt at 10:00 is outside window, but status=completed -> should succeed with 201
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-05-12T10:00:00",
+            "service_ids": [svc["id"]],
+            "status": "completed",
+            "force": False,
+        },
+    )
+    assert res.status_code == 201, res.text
+    data = res.json()
+    assert data["status"] == "completed"
+    assert "outside_work_window" not in data["warnings"]
+
+
+def test_scheduled_appointment_outside_work_window_warning(client: TestClient, test_user):
+    """Work window check is performed for scheduled status (409 needs_confirmation)."""
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    _create_work_window(client, "2024-05-12", "14:00:00", "18:00:00")
+    cl = _create_client_via_api(client)
+
+    # Explicit status=scheduled
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-05-12T10:00:00",
+            "service_ids": [svc["id"]],
+            "status": "scheduled",
+            "force": False,
+        },
+    )
+    assert res.status_code == 409
+    detail = res.json()["detail"]
+    assert detail["code"] == "needs_confirmation"
+    assert "outside_work_window" in detail["warnings"]
+
+
+def test_cancelled_appointment_ignores_overlap(client: TestClient, test_user):
+    """Cancelled status does not perform overlap check."""
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    cl = _create_client_via_api(client)
+
+    # First appointment 10:00-11:00 completed
+    res1 = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-05-14T10:00:00",
+            "service_ids": [svc["id"]],
+            "status": "completed",
+            "force": False,
+        },
+    )
+    assert res1.status_code == 201
+
+    # Second appointment 10:30-11:30 with status=cancelled does not warn on overlap
+    res2 = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-05-14T10:30:00",
+            "service_ids": [svc["id"]],
+            "status": "cancelled",
+            "force": False,
+        },
+    )
+    assert res2.status_code == 201, res2.text
+    assert "overlaps_existing" not in res2.json()["warnings"]
+
+
+def test_completed_appointment_checks_overlap(client: TestClient, test_user):
+    """Completed status DOES perform overlap check."""
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    cl = _create_client_via_api(client)
+
+    # First appointment 10:00-11:00 completed
+    res1 = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-05-15T10:00:00",
+            "service_ids": [svc["id"]],
+            "status": "completed",
+            "force": False,
+        },
+    )
+    assert res1.status_code == 201
+
+    # Overlapping completed appointment -> 409
+    res2 = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-05-15T10:30:00",
+            "service_ids": [svc["id"]],
+            "status": "completed",
+            "force": False,
+        },
+    )
+    assert res2.status_code == 409
+    detail = res2.json()["detail"]
+    assert detail["code"] == "needs_confirmation"
+    assert "overlaps_existing" in detail["warnings"]
+
 

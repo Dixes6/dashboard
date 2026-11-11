@@ -52,6 +52,7 @@ class AppointmentCreate(BaseModel):
     service_ids: List[int] = Field(..., min_length=1, max_length=20)
     note: Optional[str] = Field(default=None, max_length=2000)
     final_price: Optional[int] = Field(default=None, ge=0, le=10_000_000)
+    status: Optional[AppointmentStatus] = None
     force: bool = False
 
     @field_validator("starts_at")

@@ -151,48 +151,57 @@ async def _run_warnings(
     starts_at_utc: datetime,
     ends_at_utc: datetime,
     tz_name: str,
+    status: AppointmentStatus = AppointmentStatus.SCHEDULED,
     exclude_appointment_id: int | None = None,
 ) -> tuple[list[str], list[int]]:
     warnings: list[str] = []
     overlapping_ids: list[int] = []
 
-    local_start_date = local_date_of(starts_at_utc, tz_name)
-    local_end_date = local_date_of(ends_at_utc, tz_name)
+    # Проверка "вне рабочих окон" делается ТОЛЬКО при status == scheduled
+    if status == AppointmentStatus.SCHEDULED:
+        local_start_date = local_date_of(starts_at_utc, tz_name)
+        local_end_date = local_date_of(ends_at_utc, tz_name)
 
-    if local_start_date != local_end_date:
-        warnings.append("outside_work_window")
-    else:
-        ww_stmt = select(WorkWindow).where(WorkWindow.date == local_start_date)
-        ww_result = await db.execute(ww_stmt)
-        local_tz = zoneinfo.ZoneInfo(tz_name)
-        local_start_dt = from_utc(starts_at_utc, tz_name)
-        local_end_dt = from_utc(ends_at_utc, tz_name)
-        windows = [
-            (
-                datetime.combine(w.date, w.start_time, tzinfo=local_tz),
-                datetime.combine(w.date, w.end_time, tzinfo=local_tz),
-            )
-            for w in ww_result.scalars().all()
-        ]
-
-        if not appointment_fits_in_windows(local_start_dt, local_end_dt, windows):
+        if local_start_date != local_end_date:
             warnings.append("outside_work_window")
+        else:
+            ww_stmt = select(WorkWindow).where(WorkWindow.date == local_start_date)
+            ww_result = await db.execute(ww_stmt)
+            local_tz = zoneinfo.ZoneInfo(tz_name)
+            local_start_dt = from_utc(starts_at_utc, tz_name)
+            local_end_dt = from_utc(ends_at_utc, tz_name)
+            windows = [
+                (
+                    datetime.combine(w.date, w.start_time, tzinfo=local_tz),
+                    datetime.combine(w.date, w.end_time, tzinfo=local_tz),
+                )
+                for w in ww_result.scalars().all()
+            ]
 
-    appt_stmt = select(Appointment).where(
-        Appointment.deleted_at.is_(None),
-        Appointment.status.in_([AppointmentStatus.SCHEDULED, AppointmentStatus.COMPLETED]),
-    )
-    if exclude_appointment_id is not None:
-        appt_stmt = appt_stmt.where(Appointment.id != exclude_appointment_id)
-    appt_result = await db.execute(appt_stmt)
-    existing_appts = list(appt_result.scalars().all())
+            if not appointment_fits_in_windows(local_start_dt, local_end_dt, windows):
+                warnings.append("outside_work_window")
 
-    existing_pairs = [(a.starts_at, a.ends_at) for a in existing_appts]
-    overlap_indices = check_appointment_overlap(starts_at_utc, ends_at_utc, existing_pairs)
+    # Проверка пересечений остаётся для scheduled/completed/no_show и не делается для cancelled
+    if status in (
+        AppointmentStatus.SCHEDULED,
+        AppointmentStatus.COMPLETED,
+        AppointmentStatus.NO_SHOW,
+    ):
+        appt_stmt = select(Appointment).where(
+            Appointment.deleted_at.is_(None),
+            Appointment.status.in_([AppointmentStatus.SCHEDULED, AppointmentStatus.COMPLETED]),
+        )
+        if exclude_appointment_id is not None:
+            appt_stmt = appt_stmt.where(Appointment.id != exclude_appointment_id)
+        appt_result = await db.execute(appt_stmt)
+        existing_appts = list(appt_result.scalars().all())
 
-    if overlap_indices:
-        warnings.append("overlaps_existing")
-        overlapping_ids = [existing_appts[i].id for i in overlap_indices]
+        existing_pairs = [(a.starts_at, a.ends_at) for a in existing_appts]
+        overlap_indices = check_appointment_overlap(starts_at_utc, ends_at_utc, existing_pairs)
+
+        if overlap_indices:
+            warnings.append("overlaps_existing")
+            overlapping_ids = [existing_appts[i].id for i in overlap_indices]
 
     return warnings, overlapping_ids
 
@@ -208,7 +217,12 @@ async def create_appointment(
     client = await _resolve_client(db, data.client_id, data.client)
     services = await _load_services_ordered(db, data.service_ids)
 
+    appt_status = data.status or AppointmentStatus.SCHEDULED
     starts_at_utc = to_utc(data.starts_at, tz_name)
+    now_utc = datetime.now(timezone.utc)
+    if starts_at_utc > now_utc and appt_status != AppointmentStatus.SCHEDULED:
+        raise ValueError("Статус кроме 'scheduled' запрещён для записей в будущем")
+
     total_duration = sum(s.duration_minutes for s in services)
 
     if data.ends_at is not None:
@@ -225,7 +239,9 @@ async def create_appointment(
         final_price = list_price
         price_overridden = False
 
-    warnings, overlapping_ids = await _run_warnings(db, starts_at_utc, ends_at_utc, tz_name)
+    warnings, overlapping_ids = await _run_warnings(
+        db, starts_at_utc, ends_at_utc, tz_name, status=appt_status
+    )
 
     if warnings and not data.force:
         raise NeedsConfirmationError(warnings, overlapping_ids)
@@ -234,7 +250,7 @@ async def create_appointment(
         client_id=client.id,
         starts_at=starts_at_utc,
         ends_at=ends_at_utc,
-        status=AppointmentStatus.SCHEDULED,
+        status=appt_status,
         source=AppointmentSource.MANUAL,
         note=data.note,
         list_price=list_price,
@@ -445,6 +461,7 @@ async def update_appointment(
             appointment.starts_at,
             appointment.ends_at,
             tz_name,
+            status=appointment.status,
             exclude_appointment_id=appointment_id,
         )
         if warnings and not data.force:

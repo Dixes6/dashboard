@@ -8,10 +8,34 @@ import { useCreateAppointment, NeedsConfirmationError, type NeedsConfirmationDet
 import { useDay, type AppointmentResponse } from '../../api/home'
 import { useServices } from '../../api/services'
 import type { components } from '../../api/schema'
-import { formatDate, formatDuration } from '../../lib'
+import { formatDate, formatDuration, getTodayInTimezone } from '../../lib'
 import { computeTotals, computeEnd, digitsOnly } from '../../lib/appointments'
 
 type SettingResponse = components['schemas']['SettingResponse']
+type AppointmentStatus = components['schemas']['AppointmentStatus']
+
+const STATUS_OPTIONS: { id: AppointmentStatus; label: string; activeClass: string }[] = [
+  {
+    id: 'scheduled',
+    label: 'Запланирована',
+    activeClass: 'bg-primary text-surface shadow-soft border-primary',
+  },
+  {
+    id: 'completed',
+    label: 'Состоялась',
+    activeClass: 'bg-success text-surface shadow-soft border-success',
+  },
+  {
+    id: 'no_show',
+    label: 'Не пришёл',
+    activeClass: 'bg-muted text-surface shadow-soft border-muted',
+  },
+  {
+    id: 'cancelled',
+    label: 'Отменена',
+    activeClass: 'bg-muted text-surface shadow-soft border-muted',
+  },
+]
 
 interface AppointmentFormSheetProps {
   isOpen: boolean
@@ -40,18 +64,32 @@ const AppointmentFormInner: React.FC<AppointmentFormSheetProps> = ({
   onSuccess,
 }) => {
   const slotStepSeconds = settings.slot_step_minutes * 60
+  const today = getTodayInTimezone(settings?.timezone ?? 'UTC')
+  const isInitialPast = Boolean(selectedDate && selectedDate < today)
 
   const [client, setClient] = useState<SelectedClient | null>(null)
   const [newClientName, setNewClientName] = useState('')
   const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([])
   const [date, setDate] = useState(selectedDate)
   const [time, setTime] = useState('10:00')
+  const [status, setStatus] = useState<AppointmentStatus>(isInitialPast ? 'completed' : 'scheduled')
   const [finalPrice, setFinalPrice] = useState(0)
   const [priceOverridden, setPriceOverridden] = useState(false)
   const [note, setNote] = useState('')
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
   const [conflictDetail, setConflictDetail] = useState<NeedsConfirmationDetail | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  const isDateInFuture = Boolean(date && date > today)
+
+  const handleDateChange = (newDate: string) => {
+    setDate(newDate)
+    if (newDate > today) {
+      setStatus('scheduled')
+    } else if (newDate < today && date >= today) {
+      setStatus('completed')
+    }
+  }
 
   const createAppointment = useCreateAppointment()
   const { data: services } = useServices()
@@ -101,6 +139,7 @@ const AppointmentFormInner: React.FC<AppointmentFormSheetProps> = ({
     const payload: Parameters<typeof createAppointment.mutateAsync>[0] = {
       starts_at: startsAt,
       service_ids: selectedServiceIds,
+      status,
       force,
     }
 
@@ -212,7 +251,7 @@ const AppointmentFormInner: React.FC<AppointmentFormSheetProps> = ({
               <input
                 type="date"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) => handleDateChange(e.target.value)}
                 className={`flex-1 h-11 px-3 rounded-btn border bg-surface text-text text-sm focus:outline-none focus:ring-2 focus:ring-primary ${
                   validationErrors.date ? 'border-danger' : 'border-border'
                 }`}
@@ -242,14 +281,42 @@ const AppointmentFormInner: React.FC<AppointmentFormSheetProps> = ({
             )}
           </div>
 
-          {/* 4. Цена */}
+          {/* 4. Статус */}
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted font-medium">Статус</label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {STATUS_OPTIONS.map((st) => {
+                const isActive = status === st.id
+                const isDisabled = isDateInFuture && st.id !== 'scheduled'
+                return (
+                  <button
+                    key={st.id}
+                    type="button"
+                    disabled={isDisabled}
+                    onClick={() => setStatus(st.id)}
+                    className={`min-h-[44px] h-11 py-1 px-1 rounded-btn text-[11px] sm:text-xs font-semibold leading-tight flex items-center justify-center text-center transition-all border select-none ${
+                      isDisabled
+                        ? 'opacity-40 bg-bg text-muted border-border cursor-not-allowed'
+                        : isActive
+                          ? `${st.activeClass} cursor-pointer`
+                          : 'bg-bg text-muted border-border hover:border-primary/40 cursor-pointer'
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 5. Цена */}
           <PriceField
             listPrice={totals.price}
             value={finalPrice}
             onChange={handlePriceChange}
           />
 
-          {/* 5. Заметка */}
+          {/* 6. Заметка */}
           <div className="space-y-1">
             <label htmlFor="apt-note" className="text-xs text-muted font-medium">
               Заметка
