@@ -5,18 +5,28 @@ from pathlib import Path
 os.environ["JWT_SECRET_KEY"] = "test_secret_key_at_least_32_chars_long_for_testing_purposes"
 os.environ["APP_ENV"] = "development"
 
-import psycopg
-import pytest
-from alembic import command
-from alembic.config import Config
-from app.core.config import settings
-from app.core.database import get_db
-from app.core.security import hash_password, login_rate_limiter
-from app.main import app
-from app.models.user import User
-from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
+# Снижаем параметры argon2 исключительно для тестов (в production параметры не меняются)
+import app.core.security as security_module  # noqa: E402
+from argon2 import PasswordHasher  # noqa: E402
+
+security_module._pwd_hasher = PasswordHasher(
+    time_cost=1,
+    memory_cost=1024,
+    parallelism=1,
+)
+
+import psycopg  # noqa: E402
+import pytest  # noqa: E402
+from alembic import command  # noqa: E402
+from alembic.config import Config  # noqa: E402
+from app.core.config import settings  # noqa: E402
+from app.core.database import get_db  # noqa: E402
+from app.core.security import create_access_token, hash_password, login_rate_limiter  # noqa: E402
+from app.main import app  # noqa: E402
+from app.models.user import User  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine  # noqa: E402
+from sqlalchemy.pool import NullPool  # noqa: E402
 
 sync_test_url = settings.async_test_database_url.replace("+asyncpg", "").replace("+psycopg", "")
 
@@ -85,16 +95,42 @@ def client():
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(scope="session")
+def default_password_hash() -> str:
+    """Precompute default test user password hash once per test session."""
+    return hash_password("correct_password")
+
+
 @pytest.fixture
-def test_user():
+def test_user(default_password_hash: str):
     """Create a default owner user in the test database."""
-    hashed = hash_password("correct_password")
     with psycopg.connect(sync_test_url, autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO users (login, password_hash) VALUES (%s, %s) "
                 "RETURNING id, login, created_at",
-                ("owner", hashed),
+                ("owner", default_password_hash),
             )
             row = cur.fetchone()
-            return User(id=row[0], login=row[1], password_hash=hashed, created_at=row[2])
+            return User(
+                id=row[0],
+                login=row[1],
+                password_hash=default_password_hash,
+                created_at=row[2],
+            )
+
+
+def _login(client: TestClient, test_user: User | None = None) -> None:
+    """Быстрый хелпер логина: выставляет JWT-куку напрямую без вызова /api/auth/login."""
+    user_id = test_user.id if test_user else 1
+    token = create_access_token(user_id)
+    client.cookies.set(settings.COOKIE_NAME, token)
+
+
+def _real_login(client: TestClient, test_user: User | None = None) -> None:
+    """Хелпер настоящего логина через эндпоинт /api/auth/login."""
+    res = client.post(
+        "/api/auth/login",
+        json={"login": "owner", "password": "correct_password"},
+    )
+    assert res.status_code == 200

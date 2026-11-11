@@ -4,15 +4,7 @@ from datetime import datetime, timedelta, timezone
 import psycopg
 from fastapi.testclient import TestClient
 
-from tests.conftest import sync_test_url
-
-
-def _login(client: TestClient, test_user):
-    res = client.post(
-        "/api/auth/login",
-        json={"login": "owner", "password": "correct_password"},
-    )
-    assert res.status_code == 200
+from tests.conftest import _login, _real_login, sync_test_url
 
 
 def _create_service(
@@ -63,7 +55,7 @@ def test_appt_unauthorized(client: TestClient):
 
 
 def test_create_appointment_basic(client: TestClient, test_user):
-    _login(client, test_user)
+    _real_login(client, test_user)
 
     svc = _create_service(client, name="Маникюр", price=1500, duration=60)
     _create_work_window(client, "2024-06-15", "09:00:00", "18:00:00")
@@ -738,14 +730,14 @@ def test_create_completed_appointment_in_past(client: TestClient, test_user):
 
 
 def test_create_non_scheduled_appointment_in_future_forbidden(client: TestClient, test_user):
-    """Creating non-scheduled appointment in future returns 422."""
+    """Creating completed or no_show appointment in future returns 422; cancelled is allowed."""
     _login(client, test_user)
     svc = _create_service(client, price=1000, duration=60)
     cl = _create_client_via_api(client)
 
     future_dt = (datetime.now(timezone.utc) + timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%S")
 
-    for forbidden_status in ["completed", "no_show", "cancelled"]:
+    for forbidden_status in ["completed", "no_show"]:
         res = client.post(
             "/api/appointments",
             json={
@@ -756,7 +748,19 @@ def test_create_non_scheduled_appointment_in_future_forbidden(client: TestClient
             },
         )
         assert res.status_code == 422, f"Expected 422 for {forbidden_status}, got {res.status_code}"
-        assert "Статус кроме 'scheduled' запрещён" in res.text
+        assert "Статусы 'completed' и 'no_show' запрещены для записей в будущем" in res.text
+
+    res_cancelled = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": future_dt,
+            "service_ids": [svc["id"]],
+            "status": "cancelled",
+        },
+    )
+    assert res_cancelled.status_code == 201
+    assert res_cancelled.json()["status"] == "cancelled"
 
 
 def test_completed_appointment_past_outside_work_window_no_warning(client: TestClient, test_user):
@@ -876,5 +880,176 @@ def test_completed_appointment_checks_overlap(client: TestClient, test_user):
     detail = res2.json()["detail"]
     assert detail["code"] == "needs_confirmation"
     assert "overlaps_existing" in detail["warnings"]
+
+
+def test_patch_uncancel_to_scheduled_on_occupied_slot_requires_force(client: TestClient, test_user):
+    """Uncancelling an appointment on an occupied slot returns 409, passes with force=True."""
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    cl = _create_client_via_api(client)
+    _create_work_window(client, "2024-05-18", "10:00:00", "18:00:00")
+
+    # Appt 1: scheduled 10:00-11:00
+    res1 = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-05-18T10:00:00",
+            "service_ids": [svc["id"]],
+            "status": "scheduled",
+        },
+    )
+    assert res1.status_code == 201
+
+    # Appt 2: cancelled 10:00-11:00 (cancelled ignores overlap)
+    res2 = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-05-18T10:00:00",
+            "service_ids": [svc["id"]],
+            "status": "cancelled",
+        },
+    )
+    assert res2.status_code == 201
+    appt2_id = res2.json()["id"]
+
+    # PATCH Appt 2 to scheduled without force -> 409 needs_confirmation
+    patch_res = client.patch(
+        f"/api/appointments/{appt2_id}",
+        json={"status": "scheduled"},
+    )
+    assert patch_res.status_code == 409
+    detail = patch_res.json()["detail"]
+    assert detail["code"] == "needs_confirmation"
+    assert "overlaps_existing" in detail["warnings"]
+
+    # PATCH Appt 2 to scheduled with force=True -> 200
+    force_res = client.patch(
+        f"/api/appointments/{appt2_id}",
+        json={"status": "scheduled", "force": True},
+    )
+    assert force_res.status_code == 200
+    assert force_res.json()["status"] == "scheduled"
+
+
+def test_patch_scheduled_to_completed_past_appointment_no_warnings(client: TestClient, test_user):
+    """scheduled -> completed for past appointment returns 200 without warnings."""
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    cl = _create_client_via_api(client)
+
+    # Past appointment outside work window (no window created)
+    # Created with force=True as scheduled
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-05-19T10:00:00",
+            "service_ids": [svc["id"]],
+            "status": "scheduled",
+            "force": True,
+        },
+    )
+    assert res.status_code == 201
+    appt_id = res.json()["id"]
+
+    # Change status to completed without force: should succeed with 200 (no warnings run)
+    patch_res = client.patch(
+        f"/api/appointments/{appt_id}",
+        json={"status": "completed"},
+    )
+    assert patch_res.status_code == 200
+    assert patch_res.json()["status"] == "completed"
+
+
+def test_patch_future_appointment_to_completed_returns_422(client: TestClient, test_user):
+    """Setting status to completed for future appointment returns 422."""
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    cl = _create_client_via_api(client)
+
+    future_dt = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%S")
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": future_dt,
+            "service_ids": [svc["id"]],
+            "status": "scheduled",
+            "force": True,
+        },
+    )
+    assert res.status_code == 201
+    appt_id = res.json()["id"]
+
+    # PATCH to completed -> 422
+    patch_res = client.patch(
+        f"/api/appointments/{appt_id}",
+        json={"status": "completed"},
+    )
+    assert patch_res.status_code == 422
+    assert "Статусы 'completed' и 'no_show' запрещены для записей в будущем" in patch_res.text
+
+
+def test_patch_future_appointment_to_cancelled_returns_200(client: TestClient, test_user):
+    """Setting status to cancelled for future appointment returns 200."""
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    cl = _create_client_via_api(client)
+
+    future_dt = (datetime.now(timezone.utc) + timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%S")
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": future_dt,
+            "service_ids": [svc["id"]],
+            "status": "scheduled",
+            "force": True,
+        },
+    )
+    assert res.status_code == 201
+    appt_id = res.json()["id"]
+
+    # PATCH to cancelled -> 200
+    patch_res = client.patch(
+        f"/api/appointments/{appt_id}",
+        json={"status": "cancelled"},
+    )
+    assert patch_res.status_code == 200
+    assert patch_res.json()["status"] == "cancelled"
+
+
+def test_patch_reschedule_completed_appointment_to_future_returns_422(
+    client: TestClient, test_user
+):
+    """Rescheduling a completed appointment to a future date returns 422."""
+    _login(client, test_user)
+    svc = _create_service(client, duration=60)
+    cl = _create_client_via_api(client)
+
+    res = client.post(
+        "/api/appointments",
+        json={
+            "client_id": cl["id"],
+            "starts_at": "2024-05-20T10:00:00",
+            "service_ids": [svc["id"]],
+            "status": "completed",
+            "force": True,
+        },
+    )
+    assert res.status_code == 201
+    appt_id = res.json()["id"]
+
+    future_dt = (datetime.now(timezone.utc) + timedelta(days=4)).strftime("%Y-%m-%dT%H:%M:%S")
+    # Reschedule only (starts_at), without changing status
+    patch_res = client.patch(
+        f"/api/appointments/{appt_id}",
+        json={"starts_at": future_dt},
+    )
+    assert patch_res.status_code == 422
+    assert "Статусы 'completed' и 'no_show' запрещены для записей в будущем" in patch_res.text
+
 
 

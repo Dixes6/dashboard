@@ -11,13 +11,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
-
-def _login(client: TestClient, test_user):
-    res = client.post(
-        "/api/auth/login",
-        json={"login": "owner", "password": "correct_password"},
-    )
-    assert res.status_code == 200
+from tests.conftest import _login
 
 
 def test_jwt_secret_too_short_prevents_startup():

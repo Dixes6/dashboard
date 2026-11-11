@@ -1,12 +1,6 @@
 from fastapi.testclient import TestClient
 
-
-def _login_as_owner(client: TestClient, test_user):
-    res = client.post(
-        "/api/auth/login",
-        json={"login": "owner", "password": "correct_password"},
-    )
-    assert res.status_code == 200
+from tests.conftest import _login as _login_as_owner
 
 
 def test_settings_require_auth(client: TestClient):

@@ -220,8 +220,11 @@ async def create_appointment(
     appt_status = data.status or AppointmentStatus.SCHEDULED
     starts_at_utc = to_utc(data.starts_at, tz_name)
     now_utc = datetime.now(timezone.utc)
-    if starts_at_utc > now_utc and appt_status != AppointmentStatus.SCHEDULED:
-        raise ValueError("Статус кроме 'scheduled' запрещён для записей в будущем")
+    if starts_at_utc > now_utc and appt_status in (
+        AppointmentStatus.COMPLETED,
+        AppointmentStatus.NO_SHOW,
+    ):
+        raise ValueError("Статусы 'completed' и 'no_show' запрещены для записей в будущем")
 
     total_duration = sum(s.duration_minutes for s in services)
 
@@ -362,6 +365,22 @@ async def update_appointment(
     settings_obj = await get_or_create_settings(db)
     tz_name = settings_obj.timezone
 
+    old_status = appointment.status
+
+    if data.starts_at is not None:
+        final_starts_at_utc = to_utc(data.starts_at, tz_name)
+    else:
+        final_starts_at_utc = appointment.starts_at
+
+    final_status = data.status if data.status is not None else appointment.status
+
+    now_utc = datetime.now(timezone.utc)
+    if final_starts_at_utc > now_utc and final_status in (
+        AppointmentStatus.COMPLETED,
+        AppointmentStatus.NO_SHOW,
+    ):
+        raise ValueError("Статусы 'completed' и 'no_show' запрещены для записей в будущем")
+
     if data.client_id is not None:
         stmt = select(Client).where(
             Client.id == data.client_id, Client.deleted_at.is_(None)
@@ -455,7 +474,20 @@ async def update_appointment(
 
     warnings: list[str] = []
     overlapping_ids: list[int] = []
-    if data.starts_at is not None or data.service_ids is not None or data.ends_at is not None:
+    is_uncancelling = (
+        old_status == AppointmentStatus.CANCELLED
+        and appointment.status in (
+            AppointmentStatus.SCHEDULED,
+            AppointmentStatus.COMPLETED,
+            AppointmentStatus.NO_SHOW,
+        )
+    )
+    if (
+        data.starts_at is not None
+        or data.service_ids is not None
+        or data.ends_at is not None
+        or is_uncancelling
+    ):
         warnings, overlapping_ids = await _run_warnings(
             db,
             appointment.starts_at,

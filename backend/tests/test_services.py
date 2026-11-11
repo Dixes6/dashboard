@@ -1,12 +1,6 @@
 from fastapi.testclient import TestClient
 
-
-def _login(client: TestClient, test_user):
-    res = client.post(
-        "/api/auth/login",
-        json={"login": "owner", "password": "correct_password"},
-    )
-    assert res.status_code == 200
+from tests.conftest import _login
 
 
 def test_services_unauthorized(client: TestClient):
@@ -21,7 +15,12 @@ def test_create_and_list_services(client: TestClient, test_user):
     # Создаём 3 услуги с разным sort_order и активностью
     res1 = client.post(
         "/api/services",
-        json={"name": "Маникюр классический", "price": 1500, "duration_minutes": 60, "sort_order": 2},
+        json={
+            "name": "Маникюр классический",
+            "price": 1500,
+            "duration_minutes": 60,
+            "sort_order": 2,
+        },
     )
     assert res1.status_code == 201
     s1 = res1.json()
@@ -35,7 +34,13 @@ def test_create_and_list_services(client: TestClient, test_user):
 
     res3 = client.post(
         "/api/services",
-        json={"name": "Архивная услуга", "price": 2000, "duration_minutes": 90, "sort_order": 3, "is_active": False},
+        json={
+            "name": "Архивная услуга",
+            "price": 2000,
+            "duration_minutes": 90,
+            "sort_order": 3,
+            "is_active": False,
+        },
     )
     assert res3.status_code == 201
     s3 = res3.json()

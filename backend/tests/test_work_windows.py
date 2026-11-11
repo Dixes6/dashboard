@@ -2,13 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-
-def _login(client: TestClient, test_user):
-    res = client.post(
-        "/api/auth/login",
-        json={"login": "owner", "password": "correct_password"},
-    )
-    assert res.status_code == 200
+from tests.conftest import _login
 
 
 def test_ww_unauthorized(client: TestClient):

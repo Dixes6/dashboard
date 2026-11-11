@@ -5,15 +5,7 @@ from datetime import datetime, timedelta, timezone
 import psycopg
 from fastapi.testclient import TestClient
 
-from tests.conftest import sync_test_url
-
-
-def _login(client: TestClient, test_user):
-    res = client.post(
-        "/api/auth/login",
-        json={"login": "owner", "password": "correct_password"},
-    )
-    assert res.status_code == 200
+from tests.conftest import _login, sync_test_url
 
 
 def _setup_settings(tz_name: str = "Europe/Moscow"):
