@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Pencil, Trash2 } from 'lucide-react'
+import { Pencil } from 'lucide-react'
 import {
   useSettings,
   useCalendar,
@@ -15,6 +15,7 @@ import {
 import type { AppointmentResponse, WorkWindowResponse } from '../api'
 import { Card, EmptyState, Button, BottomSheet, Spinner, ToastProvider, useToast } from '../components/ui'
 import { Calendar } from '../components/Calendar'
+import { WorkWindowsEditor } from '../components'
 import { AppointmentFormSheet } from '../components/appointments/AppointmentFormSheet'
 import { AppointmentDetailSheet } from '../components/appointments/AppointmentDetailSheet'
 import { EntrySheet } from '../components/finance/EntrySheet'
@@ -27,15 +28,11 @@ import {
   formatNextAppointmentHeader,
   getTodayInTimezone,
   calculateBulkWorkDates,
+  validateWorkWindows,
+  type EditableWindow,
 } from '../lib'
 
 const WORK_WINDOW_STORAGE_KEY = 'last_work_window_time'
-
-interface EditableWindow {
-  id?: number
-  start_time: string
-  end_time: string
-}
 
 function getLastUsedWorkWindow(): { start_time: string; end_time: string } {
   try {
@@ -115,8 +112,7 @@ export const HomePage: React.FC = () => {
   // Заполнить месяц
   const [bulkSheetOpen, setBulkSheetOpen] = useState(false)
   const [bulkWeekdays, setBulkWeekdays] = useState<number[]>([1, 2, 3, 4, 5])
-  const [bulkStartTime, setBulkStartTime] = useState('10:00')
-  const [bulkEndTime, setBulkEndTime] = useState('18:00')
+  const [bulkWindows, setBulkWindows] = useState<EditableWindow[]>([])
   const [bulkOnlyFuture, setBulkOnlyFuture] = useState(true)
   const [bulkError, setBulkError] = useState<string | null>(null)
 
@@ -163,46 +159,9 @@ export const HomePage: React.FC = () => {
     setWorkWindowsError(null)
   }
 
-  const handleRemoveDayWindow = (index: number) => {
-    setDayWindows((prev) => prev.filter((_, idx) => idx !== index))
-    setWorkWindowsError(null)
-  }
-
-  const handleDayWindowChange = (index: number, field: 'start_time' | 'end_time', value: string) => {
-    setDayWindows((prev) =>
-      prev.map((w, idx) => (idx === index ? { ...w, [field]: value } : w)),
-    )
-    setWorkWindowsError(null)
-  }
-
-  const validateDayWindows = (windows: EditableWindow[]): string | null => {
-    for (let i = 0; i < windows.length; i++) {
-      const w = windows[i]
-      if (!w.start_time || !w.end_time) {
-        return 'Заполните время начала и окончания'
-      }
-      if (w.end_time <= w.start_time) {
-        return 'Конец рабочего окна должен быть позже начала'
-      }
-    }
-
-    for (let i = 0; i < windows.length; i++) {
-      for (let j = i + 1; j < windows.length; j++) {
-        const a = windows[i]
-        const b = windows[j]
-        // Два полуинтервала [s1, e1) и [s2, e2) пересекаются, если s1 < e2 && s2 < e1
-        if (a.start_time < b.end_time && b.start_time < a.end_time) {
-          return 'Рабочие окна одного дня не должны пересекаться'
-        }
-      }
-    }
-
-    return null
-  }
-
   const handleSaveDayWindows = async () => {
     setWorkWindowsError(null)
-    const validationError = validateDayWindows(dayWindows)
+    const validationError = validateWorkWindows(dayWindows)
     if (validationError) {
       setWorkWindowsError(validationError)
       return
@@ -287,12 +246,23 @@ export const HomePage: React.FC = () => {
   // Открытие BottomSheet «Заполнить месяц»
   const handleOpenBulkSheet = () => {
     const lastUsed = getLastUsedWorkWindow()
-    setBulkStartTime(lastUsed.start_time)
-    setBulkEndTime(lastUsed.end_time)
+    setBulkWindows([{ start_time: lastUsed.start_time, end_time: lastUsed.end_time }])
     setBulkWeekdays([1, 2, 3, 4, 5])
     setBulkOnlyFuture(true)
     setBulkError(null)
     setBulkSheetOpen(true)
+  }
+
+  const handleAddBulkWindow = () => {
+    const lastUsed = getLastUsedWorkWindow()
+    setBulkWindows((prev) => [
+      ...prev,
+      {
+        start_time: lastUsed.start_time,
+        end_time: lastUsed.end_time,
+      },
+    ])
+    setBulkError(null)
   }
 
   const toggleBulkWeekday = (dayId: number) => {
@@ -324,24 +294,32 @@ export const HomePage: React.FC = () => {
       return
     }
 
-    if (!bulkStartTime || !bulkEndTime) {
-      setBulkError('Укажите время начала и окончания')
+    if (bulkWindows.length === 0) {
+      setBulkError('Добавьте хотя бы одно рабочее окно')
       return
     }
 
-    if (bulkEndTime <= bulkStartTime) {
-      setBulkError('Время окончания должно быть позже времени начала')
+    const validationError = validateWorkWindows(bulkWindows)
+    if (validationError) {
+      setBulkError(validationError)
       return
     }
 
     try {
+      const formattedWindows = bulkWindows.map((w) => ({
+        start_time: w.start_time.length === 5 ? `${w.start_time}:00` : w.start_time,
+        end_time: w.end_time.length === 5 ? `${w.end_time}:00` : w.end_time,
+      }))
+
       await bulkCreateWindows.mutateAsync({
         dates: targetBulkDates,
-        start_time: bulkStartTime.length === 5 ? `${bulkStartTime}:00` : bulkStartTime,
-        end_time: bulkEndTime.length === 5 ? `${bulkEndTime}:00` : bulkEndTime,
+        windows: formattedWindows,
       })
 
-      saveLastUsedWorkWindow(bulkStartTime, bulkEndTime)
+      if (bulkWindows.length > 0) {
+        const last = bulkWindows[bulkWindows.length - 1]
+        saveLastUsedWorkWindow(last.start_time, last.end_time)
+      }
       showToast(`Рабочие окна добавлены: ${targetBulkDates.length} дн.`, 'success')
       setBulkSheetOpen(false)
     } catch (err: unknown) {
@@ -587,49 +565,16 @@ export const HomePage: React.FC = () => {
             </div>
           )}
 
-          {dayWindows.length === 0 ? (
-            <p className="text-sm text-muted py-2 text-center">
-              Рабочих окон нет (день свободный)
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {dayWindows.map((w, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <input
-                    type="time"
-                    step={slotStepSeconds}
-                    value={w.start_time}
-                    onChange={(e) => handleDayWindowChange(idx, 'start_time', e.target.value)}
-                    className="flex-1 h-11 px-3 rounded-btn border border-border bg-surface text-text text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                  <span className="text-xs text-muted font-medium select-none">до</span>
-                  <input
-                    type="time"
-                    step={slotStepSeconds}
-                    value={w.end_time}
-                    onChange={(e) => handleDayWindowChange(idx, 'end_time', e.target.value)}
-                    className="flex-1 h-11 px-3 rounded-btn border border-border bg-surface text-text text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveDayWindow(idx)}
-                    className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center text-muted hover:text-danger rounded-btn transition-colors cursor-pointer"
-                    aria-label="Удалить окно"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={handleAddDayWindow}
-            className="w-full py-2.5 px-3 border border-dashed border-primary/60 text-primary-ink hover:bg-primary-soft/40 rounded-btn text-sm font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[44px]"
-          >
-            + Добавить окно
-          </button>
+          <WorkWindowsEditor
+            windows={dayWindows}
+            onChange={(newWindows) => {
+              setDayWindows(newWindows)
+              setWorkWindowsError(null)
+            }}
+            slotStepSeconds={slotStepSeconds}
+            emptyMessage="Рабочих окон нет (день свободный)"
+            onAddWindow={handleAddDayWindow}
+          />
 
           {workWindowsError && (
             <p className="text-xs text-danger font-medium">{workWindowsError}</p>
@@ -717,26 +662,19 @@ export const HomePage: React.FC = () => {
             </div>
           </div>
 
-          {/* Время с ... до ... */}
+          {/* Рабочие часы */}
           <div>
             <p className="text-xs text-muted font-medium mb-2">Рабочие часы</p>
-            <div className="flex items-center gap-2">
-              <input
-                type="time"
-                step={slotStepSeconds}
-                value={bulkStartTime}
-                onChange={(e) => setBulkStartTime(e.target.value)}
-                className="flex-1 h-11 px-3 rounded-btn border border-border bg-surface text-text text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-              <span className="text-xs text-muted font-medium select-none">до</span>
-              <input
-                type="time"
-                step={slotStepSeconds}
-                value={bulkEndTime}
-                onChange={(e) => setBulkEndTime(e.target.value)}
-                className="flex-1 h-11 px-3 rounded-btn border border-border bg-surface text-text text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
+            <WorkWindowsEditor
+              windows={bulkWindows}
+              onChange={(newWindows) => {
+                setBulkWindows(newWindows)
+                setBulkError(null)
+              }}
+              slotStepSeconds={slotStepSeconds}
+              emptyMessage="Добавьте хотя бы одно рабочее окно"
+              onAddWindow={handleAddBulkWindow}
+            />
           </div>
 
           {/* Переключатель «Только будущие дни» */}
@@ -766,7 +704,7 @@ export const HomePage: React.FC = () => {
             type="submit"
             variant="primary"
             className="w-full"
-            disabled={targetBulkDates.length === 0 || bulkCreateWindows.isPending}
+            disabled={targetBulkDates.length === 0 || bulkWindows.length === 0 || bulkCreateWindows.isPending}
             loading={bulkCreateWindows.isPending}
           >
             {targetBulkDates.length === 0 ? 'Нечего добавлять' : 'Добавить'}

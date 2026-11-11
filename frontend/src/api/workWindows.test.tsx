@@ -104,6 +104,50 @@ describe('workWindows API hooks', () => {
     expect(createdList).toEqual(bulkWindows)
   })
 
+  it('useBulkCreateWindows sends bulk POST request with multiple windows', async () => {
+    const bulkWindows = [
+      { id: 3, date: '2026-11-16', start_time: '10:00:00', end_time: '13:00:00' },
+      { id: 4, date: '2026-11-16', start_time: '14:00:00', end_time: '18:00:00' },
+    ]
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      headers: { get: () => 'application/json' },
+      json: async () => bulkWindows,
+    })
+
+    const { result } = renderHook(() => useBulkCreateWindows(), {
+      wrapper: createWrapper(),
+    })
+
+    let createdList: unknown = null
+    await act(async () => {
+      createdList = await result.current.mutateAsync({
+        dates: ['2026-11-16'],
+        windows: [
+          { start_time: '10:00:00', end_time: '13:00:00' },
+          { start_time: '14:00:00', end_time: '18:00:00' },
+        ],
+      })
+    })
+
+    expect(createdList).toEqual(bulkWindows)
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/work-windows/bulk',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          dates: ['2026-11-16'],
+          windows: [
+            { start_time: '10:00:00', end_time: '13:00:00' },
+            { start_time: '14:00:00', end_time: '18:00:00' },
+          ],
+        }),
+      }),
+    )
+  })
+
   it('useUpdateWindow sends PATCH request', async () => {
     const updated = { id: 5, date: '2026-11-18', start_time: '11:00:00', end_time: '19:00:00' }
 

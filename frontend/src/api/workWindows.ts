@@ -6,6 +6,7 @@ export type WorkWindowResponse = components['schemas']['WorkWindowResponse']
 export type WorkWindowCreate = components['schemas']['WorkWindowCreate']
 export type WorkWindowBulkCreate = components['schemas']['WorkWindowBulkCreate']
 export type WorkWindowUpdate = components['schemas']['WorkWindowUpdate']
+export type WorkWindowTimeSlot = components['schemas']['WorkWindowTimeSlot']
 
 export function useWorkWindows(dateFrom?: string, dateTo?: string) {
   const query = new URLSearchParams()

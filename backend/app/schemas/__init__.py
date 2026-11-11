@@ -20,6 +20,7 @@ from app.schemas.work_window import (
     WorkWindowBulkCreate,
     WorkWindowCreate,
     WorkWindowResponse,
+    WorkWindowTimeSlot,
     WorkWindowUpdate,
 )
 
@@ -43,6 +44,7 @@ __all__ = [
     "ExpenseResponse",
     "WorkWindowCreate",
     "WorkWindowBulkCreate",
+    "WorkWindowTimeSlot",
     "WorkWindowUpdate",
     "WorkWindowResponse",
     "AppointmentCreate",

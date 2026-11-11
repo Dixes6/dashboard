@@ -60,24 +60,26 @@ async def bulk_create_work_windows(
     db: AsyncSession, data: WorkWindowBulkCreate
 ) -> list[WorkWindow]:
     created: list[WorkWindow] = []
+    slots = sorted(data.get_windows(), key=lambda w: w.start_time)
 
-    for target_date in data.dates:
+    for target_date in sorted(data.dates):
         existing = await _get_windows_for_date(db, target_date)
         existing_pairs = [(w.start_time, w.end_time) for w in existing]
 
-        if check_work_window_overlap(data.start_time, data.end_time, existing_pairs):
-            await db.rollback()
-            raise ValueError(
-                f"Рабочее окно пересекается с существующим на дату {target_date}"
+        for slot in slots:
+            if check_work_window_overlap(slot.start_time, slot.end_time, existing_pairs):
+                await db.rollback()
+                raise ValueError(
+                    f"Рабочее окно пересекается с существующим на дату {target_date}"
+                )
+            existing_pairs.append((slot.start_time, slot.end_time))
+            window = WorkWindow(
+                date=target_date,
+                start_time=slot.start_time,
+                end_time=slot.end_time,
             )
-
-        window = WorkWindow(
-            date=target_date,
-            start_time=data.start_time,
-            end_time=data.end_time,
-        )
-        db.add(window)
-        created.append(window)
+            db.add(window)
+            created.append(window)
 
     await db.commit()
     for window in created:

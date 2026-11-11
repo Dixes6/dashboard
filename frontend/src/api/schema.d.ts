@@ -971,16 +971,12 @@ export interface components {
         WorkWindowBulkCreate: {
             /** Dates */
             dates: string[];
-            /**
-             * Start Time
-             * Format: time
-             */
-            start_time: string;
-            /**
-             * End Time
-             * Format: time
-             */
-            end_time: string;
+            /** Start Time */
+            start_time?: string | null;
+            /** End Time */
+            end_time?: string | null;
+            /** Windows */
+            windows?: components["schemas"]["WorkWindowTimeSlot"][] | null;
         };
         /** WorkWindowCreate */
         WorkWindowCreate: {
@@ -1009,6 +1005,19 @@ export interface components {
              * Format: date
              */
             date: string;
+            /**
+             * Start Time
+             * Format: time
+             */
+            start_time: string;
+            /**
+             * End Time
+             * Format: time
+             */
+            end_time: string;
+        };
+        /** WorkWindowTimeSlot */
+        WorkWindowTimeSlot: {
             /**
              * Start Time
              * Format: time
