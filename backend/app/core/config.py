@@ -10,6 +10,8 @@ class Settings(BaseSettings):
 
     # Environment
     APP_ENV: Literal["development", "production"] = "development"
+    DEMO_MODE: bool = False
+    DEMO_OWNER_PASSWORD: str | None = None
 
     # Database
     POSTGRES_USER: str = "postgres"
